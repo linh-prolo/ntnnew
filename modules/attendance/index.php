@@ -115,17 +115,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         setFlash('success', 'Chấm công vào ca thành công lúc ' . date('H:i') . $flagMsg);
 
     } elseif ($action === 'check_out') {
-        try {
-            $pdo->prepare("UPDATE attendance_logs
-                SET check_out = ?,
-                    work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2),
-                    check_out_ip = ?, check_out_lat = ?, check_out_lng = ?, check_out_location_flag = ?
-                WHERE user_id = ? AND work_date = ? AND check_out IS NULL")
-                ->execute([$now, $now, $ip, $lat, $lng, $locationFlag, $user['id'], $today]);
-        } catch (Throwable $e) {
-            error_log('check_out with location failed: ' . $e->getMessage());
-            $pdo->prepare("UPDATE attendance_logs SET check_out = ?, work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2) WHERE user_id = ? AND work_date = ? AND check_out IS NULL")
-                ->execute([$now, $now, $user['id'], $today]);
+        // Tìm bản ghi check_in chưa có check_out trong hôm nay hoặc hôm qua (cho ca đêm qua ngày)
+        $openLog = $pdo->prepare("
+            SELECT id FROM attendance_logs
+            WHERE user_id = ?
+              AND check_in IS NOT NULL
+              AND check_out IS NULL
+              AND work_date >= DATE_SUB(?, INTERVAL 1 DAY)
+              AND work_date <= ?
+            ORDER BY check_in DESC
+            LIMIT 1
+        ");
+        $openLog->execute([$user['id'], $today, $today]);
+        $openLogId = $openLog->fetchColumn();
+
+        if ($openLogId) {
+            try {
+                $pdo->prepare("UPDATE attendance_logs
+                    SET check_out = ?,
+                        work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2),
+                        check_out_ip = ?, check_out_lat = ?, check_out_lng = ?, check_out_location_flag = ?
+                    WHERE id = ? AND check_out IS NULL")
+                    ->execute([$now, $now, $ip, $lat, $lng, $locationFlag, $openLogId]);
+            } catch (Throwable $e) {
+                error_log('check_out with location failed: ' . $e->getMessage());
+                $pdo->prepare("UPDATE attendance_logs SET check_out = ?, work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2) WHERE id = ? AND check_out IS NULL")
+                    ->execute([$now, $now, $openLogId]);
+            }
         }
         setFlash('success', 'Chấm công ra ca thành công lúc ' . date('H:i') . $flagMsg);
     }
@@ -139,8 +155,18 @@ if ($viewMonth < 1)  { $viewMonth = 12; $viewYear--; }
 if ($viewMonth > 12) { $viewMonth = 1;  $viewYear++; }
 
 $today = date('Y-m-d');
-$stmt  = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? AND work_date = ?");
-$stmt->execute([$user['id'], $today]);
+// Lấy bản ghi chấm công hiện tại: ưu tiên hôm nay, nếu chưa check_out thì tìm cả hôm qua (ca đêm qua ngày)
+$stmt  = $pdo->prepare("
+    SELECT * FROM attendance_logs
+    WHERE user_id = ?
+      AND work_date >= DATE_SUB(?, INTERVAL 1 DAY)
+      AND work_date <= ?
+    ORDER BY
+        CASE WHEN check_in IS NOT NULL AND check_out IS NULL THEN 0 ELSE 1 END ASC,
+        work_date DESC
+    LIMIT 1
+");
+$stmt->execute([$user['id'], $today, $today]);
 $todayLog = $stmt->fetch();
 
 $stmt = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? AND MONTH(work_date) = ? AND YEAR(work_date) = ? ORDER BY work_date");

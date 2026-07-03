@@ -210,10 +210,14 @@ $depts   = $pdo->query("SELECT * FROM departments ORDER BY name")->fetchAll();
 $empList = $pdo->query("SELECT id, full_name, employee_code FROM users WHERE is_active=1 ORDER BY full_name")->fetchAll();
 
 $otTypeLabel = [
-    'weekday' => ['Ngày thường', 'secondary'],
-    'weekend' => ['Cuối tuần',   'warning'],
-    'holiday' => ['Ngày lễ',     'danger']
-];
+    'weekday'       => ['Ngày thường',        'secondary'],
+    'weekend'       => ['Cuối tuần',           'warning'],
+    'holiday'       => ['Ngày lễ',             'danger'],
+    'night'         => ['🌙 Đêm (cũ)',         'dark'],       // backward compat
+    'night_weekday' => ['🌙 Đêm ngày thường',  'dark'],
+    'night_weekend' => ['🌙 Đêm cuối tuần',    'dark'],
+    'night_holiday' => ['🌙 Đêm ngày lễ',      'danger'],
+];
 $statusLabel = [
     'pending'  => ['⌛ Chờ duyệt', 'warning'],
     'approved' => ['✅ Đã duyệt',  'success'],
