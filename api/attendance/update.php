@@ -27,21 +27,17 @@ if ($checkOut && !preg_match('/^\d{2}:\d{2}$/', $checkOut)) {
     echo json_encode(['ok' => false, 'msg' => 'Giờ ra không hợp lệ (HH:MM)']); exit;
 }
 if ($checkIn && $checkOut) {
-    // Xác định ca đêm để tránh từ chối nhầm ca qua ngày
-    $shiftCheckStmt = $pdo->prepare("
-        SELECT ws.is_night_shift FROM employee_shifts es
-        JOIN work_shifts ws ON es.shift_id = ws.id
-        WHERE es.user_id = ? AND es.effective_date <= ?
-          AND (es.end_date IS NULL OR es.end_date >= ?)
-        ORDER BY es.effective_date DESC LIMIT 1
-    ");
-    $shiftCheckStmt->execute([$userId, $date, $date]);
-    $shiftCheck   = $shiftCheckStmt->fetch(PDO::FETCH_ASSOC);
-    $isNightShift = $shiftCheck && (int)$shiftCheck['is_night_shift'] === 1;
+    $inParts  = explode(':', $checkIn);
+    $outParts = explode(':', $checkOut);
+    $inMin    = (int)$inParts[0] * 60 + (int)$inParts[1];
+    $outMin   = (int)$outParts[0] * 60 + (int)$outParts[1];
 
-    // Chỉ từ chối nếu không phải ca đêm VÀ giờ ra <= giờ vào
-    if (!$isNightShift && $checkOut <= $checkIn) {
-        echo json_encode(['ok' => false, 'msg' => 'Giờ ra phải sau giờ vào']); exit;
+    if ($outMin <= $inMin) {
+        // Giờ ra < giờ vào: có thể là ca đêm qua ngày hôm sau
+        $hoursWorked = (1440 - $inMin + $outMin) / 60.0;
+        if ($hoursWorked > 14) {
+            echo json_encode(['ok' => false, 'msg' => 'Giờ ra không hợp lệ (chênh lệch quá lớn, hãy kiểm tra lại)']); exit;
+        }
     }
 }
 
