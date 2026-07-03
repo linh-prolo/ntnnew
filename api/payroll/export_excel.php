@@ -62,9 +62,9 @@ $slips = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // N  Điện thoại
 // O  Đi lại
 // P  Hiệu quả (performance_bonus)
-// Q  Nhà ở (other_income)
-// R  Trách nhiệm (adjustment)
-// S  Thâm niên (other_bonus)
+// Q  Nhà ở (housing_received)
+// R  Trách nhiệm (responsibility_allowance_received)
+// S  Thâm niên (seniority_allowance_received)
 // T  Độc hại (pit_adjustment)
 // U  Chuyên cần (attendance_bonus)
 // V  BHXH NV
@@ -242,9 +242,9 @@ foreach ($slips as $i => $s) {
         'O'  => (float)$s['transport_received'],
         // Phụ cấp & Thưởng (tự động)
         'P'  => (float)$s['performance_bonus'],
-        'Q'  => (float)$s['other_income'],
-        'R'  => (float)$s['adjustment'],
-        'S'  => (float)$s['other_bonus'],
+        'Q'  => (float)($s['housing_received'] ?? 0),
+        'R'  => (float)($s['responsibility_allowance_received'] ?? 0),
+        'S'  => (float)($s['seniority_allowance_received'] ?? 0),
         'T'  => (float)$s['pit_adjustment'],
         'U'  => (float)$s['attendance_bonus'],
         // Khấu trừ tự động
