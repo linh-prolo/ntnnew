@@ -55,6 +55,10 @@ $totalOT       = array_sum(array_column($slips, 'total_ot_amount'));
 $totalKpiBonus = array_sum(array_column($slips, 'kpi_bonus'));
 $totalKpiDeduct= array_sum(array_column($slips, 'kpi_deduction'));
 $totalHousing  = array_sum(array_column($slips, 'housing_received')); // ✅ Nhà ở
+$totalNightWD  = array_sum(array_column($slips, 'ot_night_weekday_amount'));
+$totalNightWE  = array_sum(array_column($slips, 'ot_night_weekend_amount'));
+$totalNightHL  = array_sum(array_column($slips, 'ot_night_holiday_amount'));
+$totalNightBonus = array_sum(array_column($slips, 'night_shift_bonus'));
 $warningCount  = count(array_filter($slips, fn($s) => $s['is_late_warning']));
 
 $statusMap = [
@@ -220,9 +224,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="sticky-col col-dept"  rowspan="2">Phòng ban</th>
                     <th class="sticky-col col-days"  rowspan="2">Ngày công</th>
                     <th class="sticky-col col-basic" rowspan="2">Lương CB</th>
-                    <th colspan="3" class="grp-ot">OT</th>
+                    <th colspan="6" class="grp-ot">OT</th>
                     <th colspan="5" class="grp-allowance">Trợ cấp</th><!-- ✅ colspan 4→5 -->
-                    <th colspan="3" class="grp-bonus">Phụ cấp & Thưởng</th>
+                    <th colspan="4" class="grp-bonus">Phụ cấp & Thưởng</th>
                     <th colspan="2" class="grp-kpi">KPI</th>
                     <th colspan="2" class="grp-leave">Nghỉ phép</th>
                     <th colspan="3" class="grp-deduct">Khấu trừ tự động</th>
@@ -234,6 +238,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-ot">Thường</th>
                     <th class="grp-ot">CN</th>
                     <th class="grp-ot">Lễ</th>
+                    <th class="grp-ot">🌙 Đêm TT</th>
+                    <th class="grp-ot">🌙 Đêm CN</th>
+                    <th class="grp-ot">🌙 Đêm Lễ</th>
                     <th class="grp-allowance">Ăn ca</th>
                     <th class="grp-allowance">Trang phục</th>
                     <th class="grp-allowance">Điện thoại</th>
@@ -242,6 +249,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-bonus">Hiệu quả</th>
                     <th class="grp-bonus">Chuyên cần</th>
                     <th class="grp-bonus">Thưởng khác</th>
+                    <th class="grp-bonus">🌙 Phụ trội đêm</th>
                     <th class="grp-kpi text-success">Thưởng KPI</th>
                     <th class="grp-kpi text-danger">Trừ KPI</th>
                     <th class="grp-leave">Có lương</th>
@@ -290,6 +298,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <td class="text-end"><?= $s['ot_weekday_amount'] > 0 ? number_format($s['ot_weekday_amount']) : '<span class="c-muted">—</span>' ?></td>
                 <td class="text-end"><?= $s['ot_weekend_amount'] > 0 ? number_format($s['ot_weekend_amount']) : '<span class="c-muted">—</span>' ?></td>
                 <td class="text-end"><?= $s['ot_holiday_amount'] > 0 ? number_format($s['ot_holiday_amount']) : '<span class="c-muted">—</span>' ?></td>
+                <?php
+                $nightWD = (float)($s['ot_night_weekday_amount'] ?? 0);
+                $nightWE = (float)($s['ot_night_weekend_amount'] ?? 0);
+                $nightHL = (float)($s['ot_night_holiday_amount'] ?? 0);
+                ?>
+                <td class="text-end"><?= $nightWD > 0 ? number_format($nightWD) : '<span class="c-muted">—</span>' ?></td>
+                <td class="text-end"><?= $nightWE > 0 ? number_format($nightWE) : '<span class="c-muted">—</span>' ?></td>
+                <td class="text-end"><?= $nightHL > 0 ? number_format($nightHL) : '<span class="c-muted">—</span>' ?></td>
 
                 <!-- Trợ cấp — ✅ thêm housing_received -->
                 <?php foreach (['meal_received','clothes_received','phone_received','transport_received','housing_received'] as $f):
@@ -302,6 +318,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     $val = (float)$s[$f]; ?>
                 <td class="text-end"><?= $val != 0 ? number_format($val) : '<span class="c-muted">—</span>' ?></td>
                 <?php endforeach; ?>
+                <?php $nightBonus = (float)($s['night_shift_bonus'] ?? 0); ?>
+                <td class="text-end <?= $nightBonus > 0 ? 'text-info fw-bold' : '' ?>">
+                    <?= $nightBonus > 0 ? number_format($nightBonus) : '<span class="c-muted">—</span>' ?>
+                </td>
 
                 <!-- KPI -->
                 <td class="text-end <?= $rowKpiBonus > 0 ? 'text-success fw-bold' : '' ?>">
@@ -364,6 +384,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'ot_weekday_amount'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'ot_weekend_amount'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'ot_holiday_amount'))) ?></td>
+                    <td class="text-end"><?= number_format($totalNightWD) ?></td>
+                    <td class="text-end"><?= number_format($totalNightWE) ?></td>
+                    <td class="text-end"><?= number_format($totalNightHL) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'meal_received'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'clothes_received'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'phone_received'))) ?></td>
@@ -372,6 +395,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'performance_bonus'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'attendance_bonus'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'other_bonus'))) ?></td>
+                    <td class="text-end <?= $totalNightBonus > 0 ? 'text-info fw-bold' : '' ?>"><?= number_format($totalNightBonus) ?></td>
                     <td class="text-end text-success fw-bold">+<?= number_format($totalKpiBonus) ?></td>
                     <td class="text-end c-danger fw-bold">-<?= number_format($totalKpiDeduct) ?></td>
                     <td class="text-center">—</td>
