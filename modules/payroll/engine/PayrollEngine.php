@@ -771,21 +771,15 @@ class PayrollEngine
             if (!$row || !(int)$row['is_night_shift']) return 0.0;
 
             // Đếm ngày thực tế đi làm trong kỳ (đã loại CN + lễ)
-            $hStmt = $this->pdo->prepare(
-                "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?"
-            );
-            $hStmt->execute([$from, $to]);
-            $holidays    = $hStmt->fetchAll(PDO::FETCH_COLUMN);
-            $holidayList = empty($holidays) ? "'0000-00-00'"
-                : implode(',', array_map(fn($d) => $this->pdo->quote($d), $holidays));
-
+            // Dùng LEFT JOIN thay vì IN clause để tránh SQL injection
             $stmt2 = $this->pdo->prepare("
-                SELECT COUNT(*) FROM attendance_logs
-                WHERE user_id = ?
-                  AND check_in IS NOT NULL
-                  AND work_date BETWEEN ? AND ?
-                  AND DAYOFWEEK(work_date) != 1
-                  AND work_date NOT IN ($holidayList)
+                SELECT COUNT(*) FROM attendance_logs al
+                LEFT JOIN holidays h ON h.holiday_date = al.work_date
+                WHERE al.user_id = ?
+                  AND al.check_in IS NOT NULL
+                  AND al.work_date BETWEEN ? AND ?
+                  AND DAYOFWEEK(al.work_date) != 1
+                  AND h.holiday_date IS NULL
             ");
             $stmt2->execute([$userId, $from, $to]);
             $days = (int)$stmt2->fetchColumn();
