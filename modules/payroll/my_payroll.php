@@ -320,6 +320,33 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <td class="text-end"><?= number_format($slipDetail['ot_night_amount'], 0, '.', ',') ?></td>
                         </tr>
                         <?php endif; ?>
+                        <?php if ((float)($slipDetail['ot_night_weekday_hours'] ?? 0) > 0): ?>
+                        <tr>
+                            <td class="text-muted small">
+                                (24c) 🌙 OT đêm ngày thường / Night weekday (×2.1)
+                                <span class="text-muted">[<?= number_format($slipDetail['ot_night_weekday_hours'], 2) ?>h]</span>
+                            </td>
+                            <td class="text-end"><?= number_format($slipDetail['ot_night_weekday_amount'], 0, '.', ',') ?></td>
+                        </tr>
+                        <?php endif; ?>
+                        <?php if ((float)($slipDetail['ot_night_weekend_hours'] ?? 0) > 0): ?>
+                        <tr>
+                            <td class="text-muted small">
+                                (24d) 🌙 OT đêm cuối tuần / Night weekend (×2.7)
+                                <span class="text-muted">[<?= number_format($slipDetail['ot_night_weekend_hours'], 2) ?>h]</span>
+                            </td>
+                            <td class="text-end"><?= number_format($slipDetail['ot_night_weekend_amount'], 0, '.', ',') ?></td>
+                        </tr>
+                        <?php endif; ?>
+                        <?php if ((float)($slipDetail['ot_night_holiday_hours'] ?? 0) > 0): ?>
+                        <tr>
+                            <td class="text-muted small">
+                                (24e) 🌙 OT đêm ngày lễ / Night holiday (×3.9)
+                                <span class="text-muted">[<?= number_format($slipDetail['ot_night_holiday_hours'], 2) ?>h]</span>
+                            </td>
+                            <td class="text-end"><?= number_format($slipDetail['ot_night_holiday_amount'], 0, '.', ',') ?></td>
+                        </tr>
+                        <?php endif; ?>
                         <tr class="bg-light">
                             <td class="fw-semibold small">(25) Tổng tiền làm thêm / Total OT salary</td>
                             <td class="text-end fw-bold"><?= number_format($slipDetail['total_ot_amount'], 0, '.', ',') ?></td>
