@@ -26,8 +26,23 @@ if ($checkIn && !preg_match('/^\d{2}:\d{2}$/', $checkIn)) {
 if ($checkOut && !preg_match('/^\d{2}:\d{2}$/', $checkOut)) {
     echo json_encode(['ok' => false, 'msg' => 'Giờ ra không hợp lệ (HH:MM)']); exit;
 }
-if ($checkIn && $checkOut && $checkOut <= $checkIn) {
-    echo json_encode(['ok' => false, 'msg' => 'Giờ ra phải sau giờ vào']); exit;
+if ($checkIn && $checkOut) {
+    // Xác định ca đêm để tránh từ chối nhầm ca qua ngày
+    $shiftCheckStmt = $pdo->prepare("
+        SELECT ws.is_night_shift FROM employee_shifts es
+        JOIN work_shifts ws ON es.shift_id = ws.id
+        WHERE es.user_id = ? AND es.effective_date <= ?
+          AND (es.end_date IS NULL OR es.end_date >= ?)
+        ORDER BY es.effective_date DESC LIMIT 1
+    ");
+    $shiftCheckStmt->execute([$userId, $date, $date]);
+    $shiftCheck   = $shiftCheckStmt->fetch(PDO::FETCH_ASSOC);
+    $isNightShift = $shiftCheck && (int)$shiftCheck['is_night_shift'] === 1;
+
+    // Chỉ từ chối nếu không phải ca đêm VÀ giờ ra <= giờ vào
+    if (!$isNightShift && $checkOut <= $checkIn) {
+        echo json_encode(['ok' => false, 'msg' => 'Giờ ra phải sau giờ vào']); exit;
+    }
 }
 
 // Lấy ca làm việc để tính lại is_late, late_minutes, work_hours
@@ -49,29 +64,45 @@ $earlyMinutes = 0;
 $workHours    = 0;
 
 if ($checkIn && $shift) {
-    $shiftStart    = strtotime($date . ' ' . $shift['start_time']);
-    $threshold     = $shiftStart + (($shift['late_threshold'] ?? 0) * 60);
-    $actualIn      = strtotime($date . ' ' . $checkIn);
+    $shiftStart = strtotime($date . ' ' . $shift['start_time']);
+    $threshold  = $shiftStart + (($shift['late_threshold'] ?? 0) * 60);
+    $actualIn   = strtotime($date . ' ' . $checkIn);
 
     if ($actualIn > $threshold) {
         $isLate      = 1;
         $lateMinutes = (int)(($actualIn - $shiftStart) / 60);
     }
 
-    // Tính về sớm
     if ($checkOut && $shift['end_time']) {
-        $shiftEnd   = strtotime($date . ' ' . $shift['end_time']);
-        $actualOut  = strtotime($date . ' ' . $checkOut);
+        $actualOut = strtotime($date . ' ' . $checkOut);
+
+        // Ca đêm: nếu giờ ra < giờ vào → sang ngày hôm sau
+        if ($actualOut <= $actualIn) {
+            $actualOut += 86400;
+        }
+
+        $shiftEnd = strtotime($date . ' ' . $shift['end_time']);
+        // Ca đêm: end_time cũng có thể nhỏ hơn start_time
+        if ($shiftEnd <= $shiftStart) {
+            $shiftEnd += 86400;
+        }
+
         if ($actualOut < $shiftEnd) {
             $earlyLeave   = 1;
             $earlyMinutes = (int)(($shiftEnd - $actualOut) / 60);
         }
-        // Tính giờ làm
+
         $workHours = round(($actualOut - $actualIn) / 3600, 2);
     }
 } elseif ($checkIn && $checkOut) {
     $actualIn  = strtotime($date . ' ' . $checkIn);
     $actualOut = strtotime($date . ' ' . $checkOut);
+
+    // Ca đêm: nếu giờ ra < giờ vào → sang ngày hôm sau
+    if ($actualOut <= $actualIn) {
+        $actualOut += 86400;
+    }
+
     $workHours = round(($actualOut - $actualIn) / 3600, 2);
 }
 
