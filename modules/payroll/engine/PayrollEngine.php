@@ -735,18 +735,15 @@ class PayrollEngine
     {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT ws.is_night_shift
-                FROM employee_shifts es
+                SELECT COUNT(*) FROM employee_shifts es
                 JOIN work_shifts ws ON es.shift_id = ws.id
                 WHERE es.user_id = ?
+                  AND ws.is_night_shift = 1
                   AND es.effective_date <= ?
                   AND (es.end_date IS NULL OR es.end_date >= ?)
-                ORDER BY es.effective_date DESC
-                LIMIT 1
             ");
             $stmt->execute([$userId, $to, $from]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $row && (int)$row['is_night_shift'] === 1;
+            return (int)$stmt->fetchColumn() > 0;
         } catch (\Throwable $e) {
             return false;
         }
@@ -755,36 +752,45 @@ class PayrollEngine
     private function getNightHoursWorked(int $userId, string $from, string $to): float
     {
         try {
-            // Lấy ca của NV trong kỳ
+            // Lấy TẤT CẢ khoảng thời gian ca đêm của NV trong kỳ
             $stmt = $this->pdo->prepare("
-                SELECT ws.is_night_shift
+                SELECT es.effective_date, COALESCE(es.end_date, :to1) AS end_date
                 FROM employee_shifts es
                 JOIN work_shifts ws ON es.shift_id = ws.id
-                WHERE es.user_id = ?
-                  AND es.effective_date <= ?
-                  AND (es.end_date IS NULL OR es.end_date >= ?)
-                ORDER BY es.effective_date DESC
-                LIMIT 1
+                WHERE es.user_id = :uid
+                  AND ws.is_night_shift = 1
+                  AND es.effective_date <= :to2
+                  AND (es.end_date IS NULL OR es.end_date >= :from1)
+                ORDER BY es.effective_date ASC
             ");
-            $stmt->execute([$userId, $to, $from]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$row || !(int)$row['is_night_shift']) return 0.0;
+            $stmt->execute([':uid' => $userId, ':to1' => $to, ':to2' => $to, ':from1' => $from]);
+            $nightRanges = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            // Đếm ngày thực tế đi làm trong kỳ (đã loại CN + lễ)
-            // Dùng LEFT JOIN thay vì IN clause để tránh SQL injection
-            $stmt2 = $this->pdo->prepare("
-                SELECT COUNT(*) FROM attendance_logs al
-                LEFT JOIN holidays h ON h.holiday_date = al.work_date
-                WHERE al.user_id = ?
-                  AND al.check_in IS NOT NULL
-                  AND al.work_date BETWEEN ? AND ?
-                  AND DAYOFWEEK(al.work_date) != 1
-                  AND h.holiday_date IS NULL
-            ");
-            $stmt2->execute([$userId, $from, $to]);
-            $days = (int)$stmt2->fetchColumn();
+            if (empty($nightRanges)) return 0.0;
 
-            return (float)($days * self::WORK_HOURS_PER_DAY);
+            $totalDays = 0;
+            foreach ($nightRanges as $range) {
+                // Clamp range to period
+                $rangeFrom = max($range['effective_date'], $from);
+                $rangeTo   = min($range['end_date'], $to);
+
+                if ($rangeFrom > $rangeTo) continue;
+
+                // Đếm ngày thực tế đi làm trong khoảng ca đêm này (loại CN + lễ)
+                $stmt2 = $this->pdo->prepare("
+                    SELECT COUNT(*) FROM attendance_logs al
+                    LEFT JOIN holidays h ON h.holiday_date = al.work_date
+                    WHERE al.user_id = ?
+                      AND al.check_in IS NOT NULL
+                      AND al.work_date BETWEEN ? AND ?
+                      AND DAYOFWEEK(al.work_date) != 1
+                      AND h.holiday_date IS NULL
+                ");
+                $stmt2->execute([$userId, $rangeFrom, $rangeTo]);
+                $totalDays += (int)$stmt2->fetchColumn();
+            }
+
+            return (float)($totalDays * self::WORK_HOURS_PER_DAY);
         } catch (\Throwable $e) {
             error_log("getNightHoursWorked error uid=$userId: " . $e->getMessage());
             return 0.0;

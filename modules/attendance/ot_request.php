@@ -66,10 +66,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
         $is_night_ot = isset($_POST['is_night_ot']) ? 1 : 0;
 
-        if ($is_night_ot)        $ot_type = 'night';
-        elseif ($isHoliday)      $ot_type = 'holiday';
-        elseif ($dow >= 7)       $ot_type = 'weekend';
-        else                     $ot_type = 'weekday';
+        if ($is_night_ot) {
+            // Phân loại OT đêm theo ngày
+            if ($isHoliday)      $ot_type = 'night_holiday';
+            elseif ($dow >= 6)   $ot_type = 'night_weekend';  // Thứ 7 (6) hoặc CN (7)
+            else                 $ot_type = 'night_weekday';
+        } elseif ($isHoliday) {
+            $ot_type = 'holiday';
+        } elseif ($dow >= 6) {
+            $ot_type = 'weekend';
+        } else {
+            $ot_type = 'weekday';
+        }
 
         // Lấy ca của nhân viên để tính hệ số
         $shiftStmt = $pdo->prepare("
@@ -155,10 +163,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 
 // OT type labels & badges
 $otTypeLabel = [
-    'weekday' => ['Ngày thường', 'secondary'],
-    'weekend' => ['Cuối tuần',   'warning'],
-    'holiday' => ['Ngày lễ',     'danger'],
-    'night'   => ['🌙 Làm đêm',  'dark'],
+    'weekday'       => ['Ngày thường',        'secondary'],
+    'weekend'       => ['Cuối tuần',           'warning'],
+    'holiday'       => ['Ngày lễ',             'danger'],
+    'night'         => ['🌙 Đêm (cũ)',         'dark'],       // backward compat
+    'night_weekday' => ['🌙 Đêm ngày thường',  'dark'],
+    'night_weekend' => ['🌙 Đêm cuối tuần',    'purple'],
+    'night_holiday' => ['🌙 Đêm ngày lễ',      'danger'],
 ];
 $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['✅ Đã duyệt', 'success'], 'rejected' => ['❌ Từ chối', 'danger']];
 ?>
@@ -432,10 +443,13 @@ const holidays = <?= json_encode(
 ) ?>;
 
 const shiftOT = {
-    weekday:  <?= $myShift ? $myShift['ot_multiplier']       : 1.5 ?>,
-    weekend:  <?= $myShift ? $myShift['weekend_multiplier']  : 2.0 ?>,
-    holiday:  <?= $myShift ? $myShift['holiday_multiplier']  : 3.0 ?>,
-    night:    1.3
+    weekday:       <?= $myShift ? $myShift['ot_multiplier']       : 1.5 ?>,
+    weekend:       <?= $myShift ? $myShift['weekend_multiplier']  : 2.0 ?>,
+    holiday:       <?= $myShift ? $myShift['holiday_multiplier']  : 3.0 ?>,
+    night_weekday: 2.1,
+    night_weekend: 2.7,
+    night_holiday: 3.9,
+    night:         1.3  // backward compat
 };
 
 // ── Xác định loại ngày ──
@@ -447,10 +461,13 @@ function getDayType(dateStr) {
 }
 
 const dayTypeInfo = {
-    weekday: { label: '📋 Ngày thường', badgeClass: 'bg-secondary' },
-    weekend: { label: '🌤️ Cuối tuần',   badgeClass: 'bg-warning text-dark' },
-    holiday: { label: '🎉 Ngày lễ',     badgeClass: 'bg-danger' },
-    night:   { label: '🌙 Làm đêm',     badgeClass: 'bg-dark' }
+    weekday:       { label: '📋 Ngày thường',        badgeClass: 'bg-secondary' },
+    weekend:       { label: '🌤️ Cuối tuần',          badgeClass: 'bg-warning text-dark' },
+    holiday:       { label: '🎉 Ngày lễ',            badgeClass: 'bg-danger' },
+    night_weekday: { label: '🌙 Đêm ngày thường',    badgeClass: 'bg-dark' },
+    night_weekend: { label: '🌙 Đêm cuối tuần',      badgeClass: 'bg-dark' },
+    night_holiday: { label: '🌙 Đêm ngày lễ',        badgeClass: 'bg-danger' },
+    night:         { label: '🌙 Làm đêm',            badgeClass: 'bg-dark' }  // backward compat
 };
 
 // ── Update preview ──
@@ -463,7 +480,18 @@ function updatePreview() {
     // Hiển thị loại ngày
     const badgeDiv = document.getElementById('dayTypeBadge');
     if (dateVal) {
-        const type = isNight ? 'night' : getDayType(dateVal);
+        let type;
+        if (isNight) {
+            // Phân loại OT đêm theo ngày giống PHP backend
+            if (holidays.includes(dateVal)) {
+                type = 'night_holiday';
+            } else {
+                const dow = new Date(dateVal).getDay(); // 0=Sun, 6=Sat
+                type = (dow === 0 || dow === 6) ? 'night_weekend' : 'night_weekday';
+            }
+        } else {
+            type = getDayType(dateVal);
+        }
         const info = dayTypeInfo[type];
         badgeDiv.innerHTML = `<span class="badge ${info.badgeClass}">${info.label}</span>`;
 
