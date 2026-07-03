@@ -29,13 +29,19 @@ $empSQL = "SELECT u.id, u.full_name, u.employee_code, d.name AS dept_name, d.id 
                   r.display_name AS role_name,
                   ws.shift_name, ws.color AS shift_color,
                   ws.start_time AS shift_start, ws.end_time AS shift_end,
-                  ws.work_hours AS shift_work_hours, ws.late_threshold
+                  ws.work_hours AS shift_work_hours, ws.late_threshold,
+                  ws.is_night_shift
            FROM users u
            LEFT JOIN departments d ON u.department_id = d.id
            LEFT JOIN roles r ON u.role_id = r.id
-           LEFT JOIN employee_shifts es ON es.user_id = u.id
-               AND es.effective_date <= LAST_DAY(?)
-               AND (es.end_date IS NULL OR es.end_date >= ?)
+           LEFT JOIN employee_shifts es ON es.id = (
+               SELECT id FROM employee_shifts es2
+               WHERE es2.user_id = u.id
+                 AND es2.effective_date <= LAST_DAY(?)
+                 AND (es2.end_date IS NULL OR es2.end_date >= ?)
+               ORDER BY es2.effective_date DESC
+               LIMIT 1
+           )
            LEFT JOIN work_shifts ws ON es.shift_id = ws.id
            WHERE u.is_active = 1 AND r.name != 'director'";
 $empParams = ["$viewYear-$viewMonth-01", "$viewYear-$viewMonth-01"];
@@ -807,6 +813,9 @@ async function showDayDetail(userId, dateStr, empName) {
                                 <label class="form-label small fw-semibold">Giờ ra</label>
                                 <input type="time" id="editCheckOut" class="form-control form-control-sm"
                                        value="${checkOutVal}">
+                                <div class="form-text text-muted" style="font-size:11px;">
+                                    💡 Ca đêm: giờ ra có thể nhỏ hơn giờ vào (VD: vào 20:00, ra 05:00)
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small fw-semibold">Ghi chú lý do sửa</label>

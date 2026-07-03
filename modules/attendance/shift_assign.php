@@ -261,9 +261,82 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 </div>
             </div>
         </div>
+    </div><!-- /.row g-4 -->
+
+    <!-- ── PHÂN CA LUÂN PHIÊN THEO THÁNG ── -->
+    <div class="card border-0 shadow-sm mb-4 mt-4">
+        <div class="card-header bg-info text-white fw-bold">
+            <i class="fas fa-sync me-2"></i>Phân ca luân phiên theo tháng
+            <small class="fw-normal opacity-75 ms-2">2 tuần ca ngày + 2 tuần ca đêm</small>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <!-- Chọn nhân viên -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Nhân viên</label>
+                    <select id="rotateUserId" class="form-select">
+                        <option value="">-- Chọn nhân viên --</option>
+                        <?php foreach ($employees as $emp): ?>
+                        <option value="<?= $emp['id'] ?>">
+                            <?= htmlspecialchars($emp['full_name']) ?>
+                            (<?= $emp['employee_code'] ?>)
+                            – <?= htmlspecialchars($emp['dept_name'] ?? '-') ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <!-- Chọn tháng/năm -->
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Tháng</label>
+                    <select id="rotateMonth" class="form-select">
+                        <?php for ($m = 1; $m <= 12; $m++): ?>
+                        <option value="<?= $m ?>" <?= $m == (int)date('m') ? 'selected' : '' ?>>
+                            Tháng <?= $m ?>
+                        </option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Năm</label>
+                    <input type="number" id="rotateYear" class="form-control" value="<?= date('Y') ?>">
+                </div>
+                <!-- Chọn ca -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Nửa đầu tháng (1–15): Ca</label>
+                    <select id="rotateShift1" class="form-select">
+                        <option value="">-- Chọn ca --</option>
+                        <?php foreach ($shifts as $sh): ?>
+                        <option value="<?= $sh['id'] ?>">
+                            <?= htmlspecialchars($sh['shift_name']) ?>
+                            (<?= substr($sh['start_time'],0,5) ?>–<?= substr($sh['end_time'],0,5) ?>)
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Nửa sau tháng (16–cuối): Ca</label>
+                    <select id="rotateShift2" class="form-select">
+                        <option value="">-- Chọn ca --</option>
+                        <?php foreach ($shifts as $sh): ?>
+                        <option value="<?= $sh['id'] ?>">
+                            <?= htmlspecialchars($sh['shift_name']) ?>
+                            (<?= substr($sh['start_time'],0,5) ?>–<?= substr($sh['end_time'],0,5) ?>)
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="button" class="btn btn-info text-white" onclick="applyRotateShift()">
+                    <i class="fas fa-sync me-1"></i>Áp dụng phân ca luân phiên
+                </button>
+            </div>
+            <div id="rotateResult" class="mt-2"></div>
+        </div>
     </div>
-</div>
-</div>
+
+</div><!-- /.container-fluid -->
+</div><!-- /.main-content -->
 
 <style>
 .btn-xs { padding: 2px 8px; font-size: 12px; }
@@ -310,6 +383,39 @@ document.getElementById('shiftSelect').addEventListener('change', function() {
         badge.classList.add('d-none');
     }
 });
+
+// ── Phân ca luân phiên ──
+async function applyRotateShift() {
+    const userId  = document.getElementById('rotateUserId').value;
+    const month   = document.getElementById('rotateMonth').value;
+    const year    = document.getElementById('rotateYear').value;
+    const shift1  = document.getElementById('rotateShift1').value;
+    const shift2  = document.getElementById('rotateShift2').value;
+    const result  = document.getElementById('rotateResult');
+
+    if (!userId || !month || !year || !shift1 || !shift2) {
+        result.innerHTML = '<div class="alert alert-warning py-2">⚠️ Vui lòng chọn đầy đủ nhân viên, tháng/năm và cả 2 ca.</div>';
+        return;
+    }
+
+    result.innerHTML = '<div class="text-muted small"><i class="fas fa-spinner fa-spin me-1"></i>Đang xử lý...</div>';
+
+    try {
+        const resp = await fetch('/erp/api/attendance/rotate_shift.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: parseInt(userId), month: parseInt(month), year: parseInt(year), shift1_id: parseInt(shift1), shift2_id: parseInt(shift2) })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            result.innerHTML = `<div class="alert alert-success py-2">✅ ${data.msg}</div>`;
+        } else {
+            result.innerHTML = `<div class="alert alert-danger py-2">❌ ${data.msg}</div>`;
+        }
+    } catch (e) {
+        result.innerHTML = '<div class="alert alert-danger py-2">❌ Lỗi kết nối server.</div>';
+    }
+}
 </script>
 
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
