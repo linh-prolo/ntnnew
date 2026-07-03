@@ -210,13 +210,13 @@ $depts   = $pdo->query("SELECT * FROM departments ORDER BY name")->fetchAll();
 $empList = $pdo->query("SELECT id, full_name, employee_code FROM users WHERE is_active=1 ORDER BY full_name")->fetchAll();
 
 $otTypeLabel = [
-    'weekday'       => ['Ngày thường',        'secondary'],
-    'weekend'       => ['Cuối tuần',           'warning'],
-    'holiday'       => ['Ngày lễ',             'danger'],
-    'night'         => ['🌙 Đêm (cũ)',         'dark'],       // backward compat
-    'night_weekday' => ['🌙 Đêm ngày thường',  'dark'],
-    'night_weekend' => ['🌙 Đêm cuối tuần',    'dark'],
-    'night_holiday' => ['🌙 Đêm ngày lễ',      'danger'],
+    'weekday'       => ['Ngày thường',           'secondary'],
+    'weekend'       => ['Cuối tuần',              'warning'],
+    'holiday'       => ['Ngày lễ',                'danger'],
+    'night'         => ['🌙 Đêm (cũ) ×1.3',      'dark'],       // backward compat
+    'night_weekday' => ['🌙 Đêm thường ×2.1',     'dark'],
+    'night_weekend' => ['🌙 Đêm CN ×2.7',         'secondary'],
+    'night_holiday' => ['🌙 Đêm lễ ×3.9',         'danger'],
 ];
 $statusLabel = [
     'pending'  => ['⌛ Chờ duyệt', 'warning'],
@@ -414,10 +414,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $otp = $otTypeLabel[$ot['ot_type']] ?? ['?','secondary'];
                         $st  = $statusLabel[$ot['status']];
                         $mult = match($ot['ot_type']) {
-                            'weekend' => $ot['weekend_multiplier'] ?? 2.0,
-                            'holiday' => $ot['holiday_multiplier'] ?? 3.0,
-                            default   => $ot['ot_multiplier'] ?? 1.5
-                        };
+                                            'weekend'       => $ot['weekend_multiplier']  ?? 2.0,
+                                            'holiday'       => $ot['holiday_multiplier']  ?? 3.0,
+                                            'night_weekday' => 2.1,
+                                            'night_weekend' => 2.7,
+                                            'night_holiday' => 3.9,
+                                            'night'         => 1.3,
+                                            default         => $ot['ot_multiplier'] ?? 1.5
+                                        };
                     ?>
                     <tr class="<?= $ot['status']==='rejected'?'opacity-50':'' ?>">
                         <?php if ($filterStatus === 'pending'): ?>
