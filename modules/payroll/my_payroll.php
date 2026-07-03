@@ -157,7 +157,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </div>
                     <table class="table table-sm table-bordered mb-4">
                         <tr class="table-dark">
-                            <td class="fw-bold">Lương Tổng / Gross salary (=1+2+3+4+5+6+7)</td>
+                            <td class="fw-bold">Lương Tổng / Gross salary (=1+2+3+4+5+5b+5c+5d+6+7)</td>
                             <td class="text-end fw-bold">
                                 <?= number_format(
                                     $slipDetail['basic_salary'] +
@@ -166,6 +166,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     $slipDetail['phone_allowance'] +
                                     $slipDetail['transport_allowance'] +
 									(float)($slipDetail['housing_allowance'] ?? 0) +
+                                    (float)($slipDetail['responsibility_allowance'] ?? 0) +
+                                    (float)($slipDetail['seniority_allowance'] ?? 0) +
                                     $slipDetail['performance_bonus'] +
 									
                                     (float)$slipDetail['attendance_bonus']
@@ -180,12 +182,19 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             ['(4) Trợ cấp điện thoại / Mobile allowance',          'phone_allowance'],
                             ['(5) Trợ cấp xăng xe / Gas-travelling allowance',     'transport_allowance'],
 							['(5b) Trợ cấp nhà ở / Housing allowance',             'housing_allowance'],
+                            ['(5c) PC Trách nhiệm / Responsibility allowance',      'responsibility_allowance'],
+                            ['(5d) PC Thâm niên / Seniority allowance',             'seniority_allowance'],
                             ['(6) Thưởng hiệu quả / Job effectiveness bonus',      'performance_bonus'],
                         ];
-                        foreach ($items as [$label, $key]): ?>
+                        foreach ($items as [$label, $key]):
+                            if (in_array($key, ['responsibility_allowance', 'seniority_allowance'], true)
+                                && (float)($slipDetail[$key] ?? 0) <= 0) {
+                                continue;
+                            }
+                        ?>
                         <tr>
                             <td class="text-muted small">- <?= $label ?></td>
-                            <td class="text-end"><?= number_format($slipDetail[$key], 0, '.', ',') ?></td>
+                            <td class="text-end"><?= number_format((float)($slipDetail[$key] ?? 0), 0, '.', ',') ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <!-- Chuyên cần -->
@@ -247,12 +256,19 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             ['(18) Trợ cấp điện thoại thực nhận / Mobile received',   'phone_received'],
                             ['(19) Trợ cấp xăng xe thực nhận / Transport received',   'transport_received'],
 							['(19b) Trợ cấp nhà ở thực nhận / Housing received',      'housing_received'],
+                           ['(19c) PC Trách nhiệm thực nhận / Responsibility received', 'responsibility_allowance_received'],
+                           ['(19d) PC Thâm niên thực nhận / Seniority received',       'seniority_allowance_received'],
                             ['(20) Thưởng hiệu quả thực nhận / Performance received', 'performance_bonus'],
                         ];
-                        foreach ($items2 as [$label, $key]): ?>
+                        foreach ($items2 as [$label, $key]):
+                           if (in_array($key, ['responsibility_allowance_received', 'seniority_allowance_received'], true)
+                               && (float)($slipDetail[$key] ?? 0) <= 0) {
+                               continue;
+                           }
+                        ?>
                         <tr>
-                            <td class="text-muted small"><?= $label ?></td>
-                            <td class="text-end"><?= number_format($slipDetail[$key], 0, '.', ',') ?></td>
+                           <td class="text-muted small"><?= $label ?></td>
+                           <td class="text-end"><?= number_format((float)($slipDetail[$key] ?? 0), 0, '.', ',') ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php if ((float)($slipDetail['night_shift_bonus'] ?? 0) > 0): ?>

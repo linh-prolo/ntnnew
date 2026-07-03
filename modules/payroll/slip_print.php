@@ -511,6 +511,18 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
 			<td class="lbl sub">(13b) Trợ cấp nhà ở / Housing allowance</td>
 			<td class="amt pos"><?= number_format($s['housing_received'] ?? 0) ?> đ</td>
 		</tr>
+        <?php if ((float)($s['responsibility_allowance_received'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">(13c) PC Trách nhiệm / Responsibility allowance</td>
+            <td class="amt pos"><?= number_format((float)($s['responsibility_allowance_received'] ?? 0)) ?> đ</td>
+        </tr>
+        <?php endif; ?>
+        <?php if ((float)($s['seniority_allowance_received'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">(13d) PC Thâm niên / Seniority allowance</td>
+            <td class="amt pos"><?= number_format((float)($s['seniority_allowance_received'] ?? 0)) ?> đ</td>
+        </tr>
+        <?php endif; ?>
         <tr>
             <td class="lbl sub">(14) Thưởng hiệu quả / Performance bonus</td>
             <td class="amt pos"><?= number_format($s['performance_bonus']) ?> đ</td>

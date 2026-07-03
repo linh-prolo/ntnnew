@@ -44,6 +44,8 @@ $otherIncome     = (float)($_POST['other_income']      ?? $slip['other_income'])
 $perfBonus       = (float)($_POST['performance_bonus'] ?? $slip['performance_bonus']);
 $otherBonus      = (float)($_POST['other_bonus']       ?? $slip['other_bonus']);
 $adjustment      = (float)($_POST['adjustment']        ?? $slip['adjustment']);
+$responsibility  = (float)($_POST['responsibility_allowance_received'] ?? ($slip['responsibility_allowance_received'] ?? 0));
+$seniority       = (float)($_POST['seniority_allowance_received']      ?? ($slip['seniority_allowance_received'] ?? 0));
 $advancePayment  = (float)($_POST['advance_payment']   ?? $slip['advance_payment']);
 $pitAdjustment   = (float)($_POST['pit_adjustment']    ?? $slip['pit_adjustment']);
 $remark          = trim($_POST['remark']               ?? $slip['remark']);
@@ -54,8 +56,12 @@ $gross = (float)$slip['basic_salary_received']
        + (float)$slip['clothes_received']
        + (float)$slip['phone_received']
        + (float)$slip['transport_received']
+       + (float)($slip['housing_received'] ?? 0)
+       + $responsibility
+       + $seniority
        + (float)$slip['attendance_bonus']
        + (float)$slip['total_ot_amount']
+       + (float)($slip['kpi_bonus'] ?? 0)
        + (float)$slip['annual_leave_payout']
        + $otherIncome
        + $perfBonus
@@ -80,6 +86,8 @@ try {
             performance_bonus  = ?,
             other_bonus        = ?,
             adjustment         = ?,
+            responsibility_allowance_received = ?,
+            seniority_allowance_received      = ?,
             advance_payment    = ?,
             pit_adjustment     = ?,
             remark             = ?,
@@ -91,7 +99,8 @@ try {
         WHERE id = ?
     ")->execute([
         $otherIncome, $perfBonus, $otherBonus,
-        $adjustment, $advancePayment, $pitAdjustment,
+        $adjustment, $responsibility, $seniority,
+        $advancePayment, $pitAdjustment,
         $remark,
         round($gross), $net, $bank,
         $slipId

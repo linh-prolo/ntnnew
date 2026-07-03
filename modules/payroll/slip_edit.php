@@ -249,6 +249,28 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <div class="card-body">
                         <div class="row g-3">
                             <div class="col-md-4">
+                                <label class="form-label fw-semibold">PC Trách nhiệm</label>
+                                <div class="input-group">
+                                    <input type="number" name="responsibility_allowance_received"
+                                           class="form-control bg-light"
+                                           value="<?= (int)($slip['responsibility_allowance_received'] ?? 0) ?>"
+                                           min="0" step="1000" readonly>
+                                    <span class="input-group-text small">đ</span>
+                                </div>
+                                <div class="form-text small">Từ cấu hình lương NV</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">PC Thâm niên</label>
+                                <div class="input-group">
+                                    <input type="number" name="seniority_allowance_received"
+                                           class="form-control bg-light"
+                                           value="<?= (int)($slip['seniority_allowance_received'] ?? 0) ?>"
+                                           min="0" step="1000" readonly>
+                                    <span class="input-group-text small">đ</span>
+                                </div>
+                                <div class="form-text small">Từ cấu hình lương NV</div>
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label fw-semibold">Thu nhập khác</label>
                                 <div class="input-group">
                                     <input type="number" name="other_income"
@@ -409,6 +431,18 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </td>
                             </tr>
                             <tr>
+                                <td>PC Trách nhiệm</td>
+                                <td class="text-end text-success" id="preview_responsibility_allowance">
+                                    <?= number_format((float)($slip['responsibility_allowance_received'] ?? 0)) ?> đ
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>PC Thâm niên</td>
+                                <td class="text-end text-success" id="preview_seniority_allowance">
+                                    <?= number_format((float)($slip['seniority_allowance_received'] ?? 0)) ?> đ
+                                </td>
+                            </tr>
+                            <tr>
                                 <td>OT</td>
                                 <td class="text-end">
                                     <?= number_format((float)$slip['total_ot_amount']) ?> đ
@@ -559,6 +593,8 @@ function fmt(n) {
 }
 
 function recalc() {
+    const responsibility = parseFloat(document.querySelector('[name="responsibility_allowance_received"]').value) || 0;
+    const seniority   = parseFloat(document.querySelector('[name="seniority_allowance_received"]').value)      || 0;
     const otherIncome = parseFloat(document.querySelector('[name="other_income"]').value)      || 0;
     const perfBonus   = parseFloat(document.querySelector('[name="performance_bonus"]').value) || 0;
     const otherBonus  = parseFloat(document.querySelector('[name="other_bonus"]').value)       || 0;
@@ -568,6 +604,7 @@ function recalc() {
 
     const gross = BASE.basic_received
                 + BASE.meal + BASE.clothes + BASE.phone + BASE.transport + BASE.housing  // ✅
+                + responsibility + seniority
                 + BASE.attendance_bonus + BASE.ot + BASE.kpi_bonus
                 + BASE.annual_leave
                 + otherIncome + perfBonus + otherBonus + adjustment;
@@ -580,6 +617,8 @@ function recalc() {
               - BASE.kpi_deduction
               - advance;
 
+    document.getElementById('preview_responsibility_allowance').textContent = fmt(responsibility);
+    document.getElementById('preview_seniority_allowance').textContent      = fmt(seniority);
     document.getElementById('preview_other_income').textContent      = fmt(otherIncome);
     document.getElementById('preview_performance_bonus').textContent = fmt(perfBonus);
     document.getElementById('preview_other_bonus').textContent       = fmt(otherBonus);
@@ -594,6 +633,7 @@ function recalc() {
 document.querySelectorAll('.calc-field').forEach(el => {
     el.addEventListener('input', recalc);
 });
+recalc();
 
 document.getElementById('formSlipEdit').addEventListener('submit', function (e) {
     e.preventDefault();
