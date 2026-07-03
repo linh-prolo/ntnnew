@@ -122,7 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                     if ($checkOut) {
                         $inTs  = strtotime("$workDate $checkIn");
                         $outTs = strtotime("$workDate $checkOut");
-                        if ($outTs > $inTs) $workHours = round(($outTs - $inTs) / 3600, 2);
+                        // Xử lý ca đêm: giờ ra < giờ vào → sang ngày hôm sau
+                        if ($outTs <= $inTs) {
+                            $outTs += 86400;
+                        }
+                        $workHours = round(($outTs - $inTs) / 3600, 2);
                     }
 
                     // Calculate late/early from shift
