@@ -52,17 +52,17 @@ $remark          = trim($_POST['remark']               ?? $slip['remark']);
 
 // Tính lại gross & net
 $gross = (float)$slip['basic_salary_received']
-       + (float)$slip['meal_received']
-       + (float)$slip['clothes_received']
-       + (float)$slip['phone_received']
-       + (float)$slip['transport_received']
+       + (float)($slip['meal_received'] ?? 0)
+       + (float)($slip['clothes_received'] ?? 0)
+       + (float)($slip['phone_received'] ?? 0)
+       + (float)($slip['transport_received'] ?? 0)
        + (float)($slip['housing_received'] ?? 0)
        + $responsibility
        + $seniority
-       + (float)$slip['attendance_bonus']
-       + (float)$slip['total_ot_amount']
+       + (float)($slip['attendance_bonus'] ?? 0)
+       + (float)($slip['total_ot_amount'] ?? 0)
        + (float)($slip['kpi_bonus'] ?? 0)
-       + (float)$slip['annual_leave_payout']
+       + (float)($slip['annual_leave_payout'] ?? 0)
        + $otherIncome
        + $perfBonus
        + $otherBonus

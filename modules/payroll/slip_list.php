@@ -227,8 +227,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="sticky-col col-days"  rowspan="2">Ngày công</th>
                     <th class="sticky-col col-basic" rowspan="2">Lương CB</th>
                     <th colspan="6" class="grp-ot">OT</th>
-                    <th colspan="5" class="grp-allowance">Trợ cấp</th><!-- ✅ colspan 4→5 -->
-                    <th colspan="6" class="grp-bonus">Phụ cấp & Thưởng</th>
+                    <th colspan="5" class="grp-allowance">Trợ cấp</th>
+                    <th colspan="6" class="grp-bonus">Phụ cấp & Thưởng</th><!-- ✅ colspan 4→6 -->
                     <th colspan="2" class="grp-kpi">KPI</th>
                     <th colspan="2" class="grp-leave">Nghỉ phép</th>
                     <th colspan="3" class="grp-deduct">Khấu trừ tự động</th>
