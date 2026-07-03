@@ -162,6 +162,7 @@ $stmt  = $pdo->prepare("
       AND work_date >= DATE_SUB(?, INTERVAL 1 DAY)
       AND work_date <= ?
     ORDER BY
+        -- 0 = bản ghi đang mở (chưa check_out) được ưu tiên trước, 1 = đã hoàn thành
         CASE WHEN check_in IS NOT NULL AND check_out IS NULL THEN 0 ELSE 1 END ASC,
         work_date DESC
     LIMIT 1

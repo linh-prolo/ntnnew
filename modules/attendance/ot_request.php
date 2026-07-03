@@ -68,9 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
         if ($is_night_ot) {
             // Phân loại OT đêm theo ngày
-            if ($isHoliday)                    $ot_type = 'night_holiday';
-            elseif ($dow == 6 || $dow == 7)    $ot_type = 'night_weekend';  // Thứ 7 (6) hoặc CN (7)
-            else                               $ot_type = 'night_weekday';
+            if ($isHoliday)      $ot_type = 'night_holiday';
+            elseif ($dow >= 6)   $ot_type = 'night_weekend';  // Thứ 7 (6) hoặc CN (7)
+            else                 $ot_type = 'night_weekday';
         } elseif ($isHoliday) {
             $ot_type = 'holiday';
         } elseif ($dow >= 6) {

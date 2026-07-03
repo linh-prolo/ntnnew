@@ -10,12 +10,11 @@
 --   mysql -u root -p ten_database < database/migrations/fix_night_shift_flags.sql
 -- =============================================================================
 
--- Fix 1: Đặt is_night_shift = 1 cho tất cả ca có giờ vào từ 18:00 trở đi HOẶC giờ ra trước 09:00 (ca qua đêm)
+-- Fix 1: Đặt is_night_shift = 1 cho tất cả ca có giờ vào từ 18:00 trở đi HOẶC giờ ra trước 08:00 (ca qua đêm)
 UPDATE work_shifts
 SET is_night_shift = 1
 WHERE shift_code = 'CA_DEM'
    OR (start_time >= '18:00:00')
-   OR (start_time >= '20:00:00')
    OR (end_time <= '08:00:00' AND end_time > '00:00:00');
 
 -- Fix 2: Đảm bảo các ca đêm phổ biến được set đúng
