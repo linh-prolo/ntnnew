@@ -146,13 +146,15 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <div class="row g-3">
                             <?php
                             $allowFields = [
-                                'meal_received'      => 'Ăn ca',
-                                'clothes_received'   => 'Trang phục',
-                                'phone_received'     => 'Điện thoại',
-                                'transport_received' => 'Đi lại',
-                                'housing_received'   => 'Nhà ở',   // ✅ Trợ cấp nhà ở
-                                'attendance_bonus'   => 'Chuyên cần',
-                                'total_ot_amount'    => 'OT (lương CB)',
+                                'meal_received'                     => 'Ăn ca',
+                                'clothes_received'                  => 'Trang phục',
+                                'phone_received'                    => 'Điện thoại',
+                                'transport_received'                => 'Đi lại',
+                                'housing_received'                  => 'Nhà ở',
+                                'responsibility_allowance_received' => 'PC Trách nhiệm',
+                                'seniority_allowance_received'      => 'PC Thâm niên',
+                                'attendance_bonus'                  => 'Chuyên cần',
+                                'total_ot_amount'                   => 'OT (lương CB)',
                             ];
                             foreach ($allowFields as $field => $label): ?>
                             <div class="col-md-2">
@@ -248,28 +250,6 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
-                            <div class="col-md-4">
-                                <label class="form-label fw-semibold">PC Trách nhiệm</label>
-                                <div class="input-group">
-                                    <input type="number" name="responsibility_allowance_received"
-                                           class="form-control bg-light"
-                                           value="<?= (int)($slip['responsibility_allowance_received'] ?? 0) ?>"
-                                           min="0" step="1000" readonly>
-                                    <span class="input-group-text small">đ</span>
-                                </div>
-                                <div class="form-text small">Từ cấu hình lương NV</div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label fw-semibold">PC Thâm niên</label>
-                                <div class="input-group">
-                                    <input type="number" name="seniority_allowance_received"
-                                           class="form-control bg-light"
-                                           value="<?= (int)($slip['seniority_allowance_received'] ?? 0) ?>"
-                                           min="0" step="1000" readonly>
-                                    <span class="input-group-text small">đ</span>
-                                </div>
-                                <div class="form-text small">Từ cấu hình lương NV</div>
-                            </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Thu nhập khác</label>
                                 <div class="input-group">
@@ -576,7 +556,9 @@ const BASE = {
     clothes          : <?= (float)$slip['clothes_received'] ?>,
     phone            : <?= (float)$slip['phone_received'] ?>,
     transport        : <?= (float)$slip['transport_received'] ?>,
-    housing          : <?= (float)($slip['housing_received'] ?? 0) ?>,   // ✅ Nhà ở
+    housing          : <?= (float)($slip['housing_received'] ?? 0) ?>,
+    responsibility   : <?= (float)($slip['responsibility_allowance_received'] ?? 0) ?>,
+    seniority        : <?= (float)($slip['seniority_allowance_received'] ?? 0) ?>,
     other_income     : <?= (float)$slip['other_income'] ?>,
     attendance_bonus : <?= (float)$slip['attendance_bonus'] ?>,
     ot               : <?= (float)$slip['total_ot_amount'] ?>,
@@ -593,8 +575,6 @@ function fmt(n) {
 }
 
 function recalc() {
-    const responsibility = parseFloat(document.querySelector('[name="responsibility_allowance_received"]').value) || 0;
-    const seniority   = parseFloat(document.querySelector('[name="seniority_allowance_received"]').value)      || 0;
     const otherIncome = parseFloat(document.querySelector('[name="other_income"]').value)      || 0;
     const perfBonus   = parseFloat(document.querySelector('[name="performance_bonus"]').value) || 0;
     const otherBonus  = parseFloat(document.querySelector('[name="other_bonus"]').value)       || 0;
@@ -603,8 +583,8 @@ function recalc() {
     const pitAdj      = parseFloat(document.querySelector('[name="pit_adjustment"]').value)    || 0;
 
     const gross = BASE.basic_received
-                + BASE.meal + BASE.clothes + BASE.phone + BASE.transport + BASE.housing  // ✅
-                + responsibility + seniority
+                + BASE.meal + BASE.clothes + BASE.phone + BASE.transport + BASE.housing
+                + BASE.responsibility + BASE.seniority
                 + BASE.attendance_bonus + BASE.ot + BASE.kpi_bonus
                 + BASE.annual_leave
                 + otherIncome + perfBonus + otherBonus + adjustment;
@@ -617,8 +597,8 @@ function recalc() {
               - BASE.kpi_deduction
               - advance;
 
-    document.getElementById('preview_responsibility_allowance').textContent = fmt(responsibility);
-    document.getElementById('preview_seniority_allowance').textContent      = fmt(seniority);
+    document.getElementById('preview_responsibility_allowance').textContent = fmt(BASE.responsibility);
+    document.getElementById('preview_seniority_allowance').textContent      = fmt(BASE.seniority);
     document.getElementById('preview_other_income').textContent      = fmt(otherIncome);
     document.getElementById('preview_performance_bonus').textContent = fmt(perfBonus);
     document.getElementById('preview_other_bonus').textContent       = fmt(otherBonus);
