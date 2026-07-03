@@ -630,10 +630,17 @@ function recalc() {
     document.getElementById('preview_bank').textContent              = fmt(Math.max(0, net));
 }
 
-document.querySelectorAll('.calc-field').forEach(el => {
-    el.addEventListener('input', recalc);
-});
-recalc();
+function initRecalc() {
+    document.querySelectorAll('.calc-field').forEach(el => {
+        el.addEventListener('input', recalc);
+    });
+    recalc();
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initRecalc, { once: true });
+} else {
+    initRecalc();
+}
 
 document.getElementById('formSlipEdit').addEventListener('submit', function (e) {
     e.preventDefault();
