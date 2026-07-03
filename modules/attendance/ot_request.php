@@ -453,6 +453,16 @@ $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['�
 .ot-item:last-child { border-bottom: none !important; }
 </style>
 
+<?php
+// Pre-calculate night window minutes for JavaScript
+$jsNightStartMin = ($myShift && $myShift['is_night_shift'])
+    ? (int)substr($myShift['start_time'],0,2)*60 + (int)substr($myShift['start_time'],3,2)
+    : 22*60;
+$jsNightEndMin = ($myShift && $myShift['is_night_shift'])
+    ? (int)substr($myShift['end_time'],0,2)*60 + (int)substr($myShift['end_time'],3,2)
+    : 6*60;
+?>
+
 <script>
 // ── Ngày lễ từ server ──
 const holidays = <?= json_encode(
@@ -473,12 +483,8 @@ const shiftOT = {
 };
 
 // ── Khung giờ đêm từ ca làm việc (hoặc mặc định 22:00–06:00) ──
-const nightStartMin = <?= ($myShift && $myShift['is_night_shift'])
-    ? (int)substr($myShift['start_time'],0,2)*60 + (int)substr($myShift['start_time'],3,2)
-    : 22*60 ?>;
-const nightEndMin = <?= ($myShift && $myShift['is_night_shift'])
-    ? (int)substr($myShift['end_time'],0,2)*60 + (int)substr($myShift['end_time'],3,2)
-    : 6*60 ?>;
+const nightStartMin = <?= $jsNightStartMin ?>;
+const nightEndMin   = <?= $jsNightEndMin ?>;
 
 function timeToMin(t) {
     const [h, m] = t.split(':').map(Number);
