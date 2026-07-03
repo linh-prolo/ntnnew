@@ -71,24 +71,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $shift    = $shiftStmt->fetch();
         $shift_id = $shift['shift_id'] ?? null;
 
-        // Xác định khung giờ đêm
-        $nightStart = '22:00'; // mặc định theo luật LĐ VN
-        $nightEnd   = '06:00';
+        // Xác định có phải OT đêm không
+        $isNightOT = false;
+
         if ($shift && (int)$shift['is_night_shift'] === 1) {
-            $nightStart = substr($shift['shift_start'], 0, 5);
-            $nightEnd   = substr($shift['shift_end'],   0, 5);
-        }
-
-        // Kiểm tra start_time OT có nằm trong khung đêm không
-        $otStartMin    = (int)substr($start_time, 0, 2) * 60 + (int)substr($start_time, 3, 2);
-        $nightStartMin = (int)substr($nightStart, 0, 2) * 60 + (int)substr($nightStart, 3, 2);
-        $nightEndMin   = (int)substr($nightEnd,   0, 2) * 60 + (int)substr($nightEnd,   3, 2);
-
-        // Ca đêm vượt qua midnight: nightStart > nightEnd (ví dụ 22:00 > 06:00)
-        if ($nightStartMin > $nightEndMin) {
-            $isNightOT = ($otStartMin >= $nightStartMin || $otStartMin < $nightEndMin);
+            // NV được gán ca đêm → MỌI OT ngày đó đều là OT đêm
+            $isNightOT = true;
         } else {
-            $isNightOT = ($otStartMin >= $nightStartMin && $otStartMin < $nightEndMin);
+            // Ca ngày hoặc không có ca → xét theo giờ bắt đầu OT (22:00–06:00)
+            $startH   = (int)substr($start_time, 0, 2);
+            $startM   = (int)substr($start_time, 3, 2);
+            $startMin = $startH * 60 + $startM;
+            // >= 22:00 (1320) hoặc < 06:00 (360)
+            $isNightOT = ($startMin >= 22 * 60 || $startMin < 6 * 60);
         }
 
         // Xác định loại OT (ngày thường / cuối tuần / ngày lễ / đêm)
@@ -303,11 +298,13 @@ $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['�
                         <!-- OT đêm tự động -->
                         <div class="alert alert-dark py-2 mb-3 small">
                             <i class="fas fa-moon me-1"></i>
-                            <strong>OT đêm tự động:</strong> Nếu giờ bắt đầu OT từ 
-                            <strong><?= $myShift && $myShift['is_night_shift'] ? substr($myShift['start_time'],0,5) : '22:00' ?></strong>
-                            đến 
-                            <strong><?= $myShift && $myShift['is_night_shift'] ? substr($myShift['end_time'],0,5) : '06:00' ?></strong>
-                            → hệ thống tự tính hệ số OT đêm (×2.1 / ×2.7 / ×3.9)
+                            <?php if ($myShift && (int)$myShift['is_night_shift'] === 1): ?>
+                                <strong>Ca đêm <?= substr($myShift['start_time'],0,5) ?>–<?= substr($myShift['end_time'],0,5) ?>:</strong>
+                                Tất cả OT của bạn hôm nay được tính hệ số <strong>đêm</strong> tự động.
+                            <?php else: ?>
+                                <strong>OT đêm tự động:</strong> OT từ <strong>22:00</strong> đến <strong>06:00</strong>
+                                → hệ thống tự tính hệ số OT đêm (×2.1 / ×2.7 / ×3.9)
+                            <?php endif; ?>
                         </div>
 
                         <!-- Lý do -->
@@ -454,13 +451,8 @@ $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['�
 </style>
 
 <?php
-// Pre-calculate night window minutes for JavaScript
-$jsNightStartMin = ($myShift && $myShift['is_night_shift'])
-    ? (int)substr($myShift['start_time'],0,2)*60 + (int)substr($myShift['start_time'],3,2)
-    : 22*60;
-$jsNightEndMin = ($myShift && $myShift['is_night_shift'])
-    ? (int)substr($myShift['end_time'],0,2)*60 + (int)substr($myShift['end_time'],3,2)
-    : 6*60;
+// Pass night-shift flag to JavaScript
+$jsIsNightShift = ($myShift && (int)$myShift['is_night_shift'] === 1) ? 'true' : 'false';
 ?>
 
 <script>
@@ -482,28 +474,27 @@ const shiftOT = {
     night:         1.3  // backward compat
 };
 
-// ── Khung giờ đêm từ ca làm việc (hoặc mặc định 22:00–06:00) ──
-const nightStartMin = <?= $jsNightStartMin ?>;
-const nightEndMin   = <?= $jsNightEndMin ?>;
+// ── Thông tin ca làm việc ──
+const employeeShift = {
+    isNight: <?= $jsIsNightShift ?>
+};
 
 function timeToMin(t) {
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
 }
 
-function isNightTime(startTimeStr) {
+function isNightOT(startTimeStr) {
     if (!startTimeStr) return false;
+    // Nếu NV có ca đêm → MỌI OT đều là đêm
+    if (employeeShift.isNight) return true;
+    // Ca ngày hoặc không có ca → xét theo giờ bắt đầu OT (22:00–06:00)
     const min = timeToMin(startTimeStr);
-    if (nightStartMin > nightEndMin) {
-        // Ca đêm qua midnight (ví dụ 22:00–06:00)
-        return min >= nightStartMin || min < nightEndMin;
-    } else {
-        return min >= nightStartMin && min < nightEndMin;
-    }
+    return min >= 22 * 60 || min < 6 * 60;
 }
 
 function getOTType(dateStr, startTimeStr) {
-    const isNight   = isNightTime(startTimeStr);
+    const isNight   = isNightOT(startTimeStr);
     const isHol     = holidays.includes(dateStr);
     const dow       = new Date(dateStr).getDay(); // 0=Sun, 6=Sat
     const isWeekend = (dow === 0 || dow === 6);
