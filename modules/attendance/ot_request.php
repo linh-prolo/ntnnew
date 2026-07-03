@@ -57,6 +57,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     }
 
     if (empty($errors)) {
+        // Lấy ca của nhân viên vào ngày OT để xác định khung giờ đêm
+        $shiftStmt = $pdo->prepare("
+            SELECT ws.start_time AS shift_start, ws.end_time AS shift_end, ws.is_night_shift, es.shift_id,
+                   ws.ot_multiplier, ws.weekend_multiplier, ws.holiday_multiplier
+            FROM employee_shifts es
+            JOIN work_shifts ws ON es.shift_id = ws.id
+            WHERE es.user_id = ? AND es.effective_date <= ?
+              AND (es.end_date IS NULL OR es.end_date >= ?)
+            ORDER BY es.effective_date DESC LIMIT 1
+        ");
+        $shiftStmt->execute([$user['id'], $ot_date, $ot_date]);
+        $shift    = $shiftStmt->fetch();
+        $shift_id = $shift['shift_id'] ?? null;
+
+        // Xác định khung giờ đêm
+        $nightStart = '22:00'; // mặc định theo luật LĐ VN
+        $nightEnd   = '06:00';
+        if ($shift && (int)$shift['is_night_shift'] === 1) {
+            $nightStart = substr($shift['shift_start'], 0, 5);
+            $nightEnd   = substr($shift['shift_end'],   0, 5);
+        }
+
+        // Kiểm tra start_time OT có nằm trong khung đêm không
+        $otStartMin    = (int)substr($start_time, 0, 2) * 60 + (int)substr($start_time, 3, 2);
+        $nightStartMin = (int)substr($nightStart, 0, 2) * 60 + (int)substr($nightStart, 3, 2);
+        $nightEndMin   = (int)substr($nightEnd,   0, 2) * 60 + (int)substr($nightEnd,   3, 2);
+
+        // Ca đêm vượt qua midnight: nightStart > nightEnd (ví dụ 22:00 > 06:00)
+        if ($nightStartMin > $nightEndMin) {
+            $isNightOT = ($otStartMin >= $nightStartMin || $otStartMin < $nightEndMin);
+        } else {
+            $isNightOT = ($otStartMin >= $nightStartMin && $otStartMin < $nightEndMin);
+        }
+
         // Xác định loại OT (ngày thường / cuối tuần / ngày lễ / đêm)
         $dow = date('N', strtotime($ot_date)); // 1=Mon ... 7=Sun
         $isHoliday = false;
@@ -64,13 +98,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $hChk->execute([$ot_date]);
         if ($hChk->fetchColumn() > 0) $isHoliday = true;
 
-        $is_night_ot = isset($_POST['is_night_ot']) ? 1 : 0;
-
-        if ($is_night_ot) {
-            // Phân loại OT đêm theo ngày
-            if ($isHoliday)      $ot_type = 'night_holiday';
-            elseif ($dow >= 6)   $ot_type = 'night_weekend';  // Thứ 7 (6) hoặc CN (7)
-            else                 $ot_type = 'night_weekday';
+        if ($isNightOT) {
+            if ($isHoliday)    $ot_type = 'night_holiday';
+            elseif ($dow >= 6) $ot_type = 'night_weekend';
+            else               $ot_type = 'night_weekday';
         } elseif ($isHoliday) {
             $ot_type = 'holiday';
         } elseif ($dow >= 6) {
@@ -78,18 +109,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         } else {
             $ot_type = 'weekday';
         }
-
-        // Lấy ca của nhân viên để tính hệ số
-        $shiftStmt = $pdo->prepare("
-            SELECT ws.ot_multiplier, ws.weekend_multiplier, ws.holiday_multiplier, es.shift_id
-            FROM employee_shifts es
-            JOIN work_shifts ws ON es.shift_id = ws.id
-            WHERE es.user_id = ? AND es.effective_date <= ? AND (es.end_date IS NULL OR es.end_date >= ?)
-            ORDER BY es.effective_date DESC LIMIT 1
-        ");
-        $shiftStmt->execute([$user['id'], $ot_date, $ot_date]);
-        $shift = $shiftStmt->fetch();
-        $shift_id = $shift['shift_id'] ?? null;
 
         $stmt = $pdo->prepare("
             INSERT INTO overtime_requests
@@ -281,19 +300,14 @@ $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['�
                             </div>
                         </div>
 
-                        <!-- Loại OT đặc biệt -->
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">🌙 Loại OT đặc biệt</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="is_night_ot" id="isNightOt" value="1"
-                                       <?= !empty($_POST['is_night_ot']) ? 'checked' : '' ?>>
-                                <label class="form-check-label small" for="isNightOt">
-                                    Làm đêm (22h – 6h) — hệ số <strong>1.3x</strong> lương cơ bản/giờ
-                                </label>
-                            </div>
-                            <div class="form-text" style="font-size:11px;">
-                                ✅ Tick nếu ca OT này diễn ra trong khoảng 22h tối đến 6h sáng
-                            </div>
+                        <!-- OT đêm tự động -->
+                        <div class="alert alert-dark py-2 mb-3 small">
+                            <i class="fas fa-moon me-1"></i>
+                            <strong>OT đêm tự động:</strong> Nếu giờ bắt đầu OT từ 
+                            <strong><?= $myShift && $myShift['is_night_shift'] ? substr($myShift['start_time'],0,5) : '22:00' ?></strong>
+                            đến 
+                            <strong><?= $myShift && $myShift['is_night_shift'] ? substr($myShift['end_time'],0,5) : '06:00' ?></strong>
+                            → hệ thống tự tính hệ số OT đêm (×2.1 / ×2.7 / ×3.9)
                         </div>
 
                         <!-- Lý do -->
@@ -316,22 +330,28 @@ $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['�
                 <div class="card-body py-3">
                     <p class="fw-bold small mb-2">💰 Hệ số OT ca <?= htmlspecialchars($myShift['shift_name']) ?></p>
                     <div class="row g-1 text-center">
-                        <div class="col-4">
+                        <div class="col-3">
                             <div class="bg-white rounded p-2">
                                 <div class="fw-bold text-secondary"><?= $myShift['ot_multiplier'] ?>x</div>
                                 <div style="font-size:10px;">Ngày thường</div>
                             </div>
                         </div>
-                        <div class="col-4">
+                        <div class="col-3">
                             <div class="bg-white rounded p-2">
                                 <div class="fw-bold text-warning"><?= $myShift['weekend_multiplier'] ?>x</div>
                                 <div style="font-size:10px;">Cuối tuần</div>
                             </div>
                         </div>
-                        <div class="col-4">
+                        <div class="col-3">
                             <div class="bg-white rounded p-2">
                                 <div class="fw-bold text-danger"><?= $myShift['holiday_multiplier'] ?>x</div>
                                 <div style="font-size:10px;">Ngày lễ</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="bg-dark rounded p-2">
+                                <div class="fw-bold text-warning">2.1x</div>
+                                <div style="font-size:10px;" class="text-white">OT đêm</div>
                             </div>
                         </div>
                     </div>
@@ -452,12 +472,45 @@ const shiftOT = {
     night:         1.3  // backward compat
 };
 
-// ── Xác định loại ngày ──
-function getDayType(dateStr) {
-    if (holidays.includes(dateStr)) return 'holiday';
-    const dow = new Date(dateStr).getDay(); // 0=Sun, 6=Sat
-    if (dow === 0 || dow === 6) return 'weekend';
-    return 'weekday';
+// ── Khung giờ đêm từ ca làm việc (hoặc mặc định 22:00–06:00) ──
+const nightStartMin = <?= ($myShift && $myShift['is_night_shift'])
+    ? (int)substr($myShift['start_time'],0,2)*60 + (int)substr($myShift['start_time'],3,2)
+    : 22*60 ?>;
+const nightEndMin = <?= ($myShift && $myShift['is_night_shift'])
+    ? (int)substr($myShift['end_time'],0,2)*60 + (int)substr($myShift['end_time'],3,2)
+    : 6*60 ?>;
+
+function timeToMin(t) {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+}
+
+function isNightTime(startTimeStr) {
+    if (!startTimeStr) return false;
+    const min = timeToMin(startTimeStr);
+    if (nightStartMin > nightEndMin) {
+        // Ca đêm qua midnight (ví dụ 22:00–06:00)
+        return min >= nightStartMin || min < nightEndMin;
+    } else {
+        return min >= nightStartMin && min < nightEndMin;
+    }
+}
+
+function getOTType(dateStr, startTimeStr) {
+    const isNight   = isNightTime(startTimeStr);
+    const isHol     = holidays.includes(dateStr);
+    const dow       = new Date(dateStr).getDay(); // 0=Sun, 6=Sat
+    const isWeekend = (dow === 0 || dow === 6);
+
+    if (isNight) {
+        if (isHol)     return 'night_holiday';
+        if (isWeekend) return 'night_weekend';
+        return 'night_weekday';
+    } else {
+        if (isHol)     return 'holiday';
+        if (isWeekend) return 'weekend';
+        return 'weekday';
+    }
 }
 
 const dayTypeInfo = {
@@ -475,28 +528,14 @@ function updatePreview() {
     const dateVal  = document.getElementById('otDate').value;
     const startVal = document.getElementById('otStart').value;
     const endVal   = document.getElementById('otEnd').value;
-    const isNight  = document.getElementById('isNightOt')?.checked;
 
-    // Hiển thị loại ngày
     const badgeDiv = document.getElementById('dayTypeBadge');
-    if (dateVal) {
-        let type;
-        if (isNight) {
-            // Phân loại OT đêm theo ngày giống PHP backend
-            if (holidays.includes(dateVal)) {
-                type = 'night_holiday';
-            } else {
-                const dow = new Date(dateVal).getDay(); // 0=Sun, 6=Sat
-                type = (dow === 0 || dow === 6) ? 'night_weekend' : 'night_weekday';
-            }
-        } else {
-            type = getDayType(dateVal);
-        }
+    if (dateVal && startVal) {
+        const type = getOTType(dateVal, startVal);
         const info = dayTypeInfo[type];
         badgeDiv.innerHTML = `<span class="badge ${info.badgeClass}">${info.label}</span>`;
 
-        // Update preview
-        if (startVal && endVal) {
+        if (endVal) {
             let startMin = timeToMin(startVal);
             let endMin   = timeToMin(endVal);
             if (endMin <= startMin) endMin += 24 * 60;
@@ -511,15 +550,9 @@ function updatePreview() {
     }
 }
 
-function timeToMin(t) {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
-}
-
 document.getElementById('otDate').addEventListener('change', updatePreview);
 document.getElementById('otStart').addEventListener('change', updatePreview);
 document.getElementById('otEnd').addEventListener('change', updatePreview);
-document.getElementById('isNightOt')?.addEventListener('change', updatePreview);
 // Chạy ngay khi load
 updatePreview();
 </script>
