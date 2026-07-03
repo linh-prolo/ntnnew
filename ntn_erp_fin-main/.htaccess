@@ -1,0 +1,11 @@
+Options -Indexes
+DirectoryIndex login.php index.php
+
+RewriteEngine On
+RewriteBase /erp/
+
+# Redirect / về login
+RewriteRule ^$ login.php [R=302,L]
+
+php_flag display_errors off
+php_value error_reporting 0
