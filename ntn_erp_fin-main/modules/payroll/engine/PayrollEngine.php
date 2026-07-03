@@ -3,10 +3,13 @@ class PayrollEngine
 {
     private PDO $pdo;
 
-    const OT_WEEKDAY = 1.5;
-    const OT_WEEKEND = 2.0;
-    const OT_HOLIDAY = 3.0;
-    const OT_NIGHT   = 1.30; // OT ban đêm = 130% lương cơ bản/giờ
+    const OT_WEEKDAY       = 1.5;
+    const OT_WEEKEND       = 2.0;
+    const OT_HOLIDAY       = 3.0;
+    const OT_NIGHT         = 1.30; // Backward compat
+    const OT_NIGHT_WEEKDAY = 2.1;  // OT đêm ngày thường
+    const OT_NIGHT_WEEKEND = 2.7;  // OT đêm cuối tuần
+    const OT_NIGHT_HOLIDAY = 3.9;  // OT đêm ngày lễ
 
     const NIGHT_SHIFT_MULTIPLIER = 0.30; // 30% phụ trội đêm trên lương cơ bản thực nhận
 
@@ -79,8 +82,13 @@ class PayrollEngine
 
         $salaryPerDay  = $workingDays > 0 ? round($totalSalaryNoAttend / $workingDays) : 0;
         $totalPerHour  = round($salaryPerDay / self::WORK_HOURS_PER_DAY);
-        $basicPerDay   = $workingDays > 0 ? round($basicSalary / $workingDays) : 0;
-        $salaryPerHour = round($basicPerDay / self::WORK_HOURS_PER_DAY);
+
+        // Lương 1h = (Lương cơ bản + PC Trách nhiệm + PC Kỹ năng) / ngày công chuẩn / 8
+        $responsibilityAllow = (int)($salary['responsibility_allowance'] ?? 0);
+        $seniorityAllow      = (int)($salary['seniority_allowance']      ?? 0);
+        $otBase              = $basicSalary + $responsibilityAllow + $seniorityAllow;
+        $basicPerDay         = $workingDays > 0 ? round($otBase / $workingDays) : 0;
+        $salaryPerHour       = round($basicPerDay / self::WORK_HOURS_PER_DAY);
 
         // ── Dữ liệu chấm công / nghỉ phép / OT ───────────────────────
         $att = $this->getAttendanceData($userId, $period['period_from'], $period['period_to']);
@@ -97,10 +105,13 @@ class PayrollEngine
         $totalEarlyMinutes = (float)($att['total_early_minutes'] ?? 0);
         $lateMinutes       = $totalLateMinutes + $totalEarlyMinutes;
 
-        $otWeekdayHours = (float)($ot['ot_weekday_hours'] ?? 0);
-        $otWeekendHours = (float)($ot['ot_weekend_hours'] ?? 0);
-        $otHolidayHours = (float)($ot['ot_holiday_hours'] ?? 0);
-        $otNightHours   = (float)($ot['ot_night_hours']   ?? 0);
+        $otWeekdayHours      = (float)($ot['ot_weekday_hours']       ?? 0);
+        $otWeekendHours      = (float)($ot['ot_weekend_hours']       ?? 0);
+        $otHolidayHours      = (float)($ot['ot_holiday_hours']       ?? 0);
+        $otNightHours        = (float)($ot['ot_night_hours']         ?? 0); // backward compat
+        $otNightWeekdayHours = (float)($ot['ot_night_weekday_hours'] ?? 0);
+        $otNightWeekendHours = (float)($ot['ot_night_weekend_hours'] ?? 0);
+        $otNightHolidayHours = (float)($ot['ot_night_holiday_hours'] ?? 0);
 
         $isLateWarning   = ($lateMinutes > self::LATE_GRACE_MINUTES);
         $lateWarningNote = (string)($att['late_early_dates'] ?? '');
@@ -135,9 +146,12 @@ class PayrollEngine
         $basicReceived = $workingDays > 0
             ? round($basicSalary * ($totalPaidDays / $workingDays)) : 0;
 
-        // ── Phụ trội làm đêm ─────────────────────────────────────────
-        $isNightShift    = $this->isNightShiftWorker($userId, $period['period_from'], $period['period_to']);
-        $nightShiftBonus = $isNightShift ? (int)round($basicReceived * self::NIGHT_SHIFT_MULTIPLIER) : 0;
+        // ── Phụ trội làm đêm (30% theo giờ thực tế làm trong khung ca đêm) ─────
+        $isNightShift     = $this->isNightShiftWorker($userId, $period['period_from'], $period['period_to']);
+        $nightHoursActual = $this->getNightHoursWorked($userId, $period['period_from'], $period['period_to']);
+        $nightShiftBonus  = $nightHoursActual > 0
+            ? (int)round($salaryPerHour * $nightHoursActual * self::NIGHT_SHIFT_MULTIPLIER)
+            : 0;
 
         $allowanceRatio = $workingDays > 0
             ? min(1.0, $totalPaidDays / $workingDays) : 0;
@@ -164,8 +178,9 @@ class PayrollEngine
             if (in_array($code, [
                 'basic', 'meal', 'clothes', 'phone',
                 'transport', 'housing',                 // ✅ loại housing ra khỏi "other"
-                'performance', 'attendance_bonus'
-            ])) continue;
+                'responsibility_allowance', 'seniority_allowance', // ✅ loại ra để không tính trùng vào OT base
+                'performance', 'attendance_bonus'
+            ])) continue;
             if (!in_array($comp['component_type'], ['earning', 'bonus'])) continue;
             $otherComponentsReceived += round((int)$comp['amount'] * $allowanceRatio);
         }
@@ -176,11 +191,15 @@ class PayrollEngine
         $attendReceived  = ($attendEligible && $attendBonus > 0) ? $attendBonus : 0;
 
         // ── OT ───────────────────────────────────────────────────────
-        $otWeekdayAmt = round($otWeekdayHours * $salaryPerHour * self::OT_WEEKDAY);
-        $otWeekendAmt = round($otWeekendHours * $salaryPerHour * self::OT_WEEKEND);
-        $otHolidayAmt = round($otHolidayHours * $salaryPerHour * self::OT_HOLIDAY);
-        $otNightAmt   = round($otNightHours   * $salaryPerHour * self::OT_NIGHT);
-        $totalOtAmt   = $otWeekdayAmt + $otWeekendAmt + $otHolidayAmt + $otNightAmt;
+        $otWeekdayAmt      = round($otWeekdayHours      * $salaryPerHour * self::OT_WEEKDAY);
+        $otWeekendAmt      = round($otWeekendHours      * $salaryPerHour * self::OT_WEEKEND);
+        $otHolidayAmt      = round($otHolidayHours      * $salaryPerHour * self::OT_HOLIDAY);
+        $otNightWeekdayAmt = round($otNightWeekdayHours * $salaryPerHour * self::OT_NIGHT_WEEKDAY);
+        $otNightWeekendAmt = round($otNightWeekendHours * $salaryPerHour * self::OT_NIGHT_WEEKEND);
+        $otNightHolidayAmt = round($otNightHolidayHours * $salaryPerHour * self::OT_NIGHT_HOLIDAY);
+        // Backward compat: tổng 3 loại đêm
+        $otNightAmt        = $otNightWeekdayAmt + $otNightWeekendAmt + $otNightHolidayAmt;
+        $totalOtAmt        = $otWeekdayAmt + $otWeekendAmt + $otHolidayAmt + $otNightAmt;
 
         // ── Phép tồn ─────────────────────────────────────────────────
         $periodYear     = (int)($period['period_year'] ?? (int)substr($period['period_from'], 0, 4));
@@ -230,7 +249,7 @@ class PayrollEngine
         // ── Ghi chú tự động ──────────────────────────────────────────
         $remarkParts = [];
         if ($nightShiftBonus > 0)
-            $remarkParts[] = "Phụ trội đêm: +".number_format($nightShiftBonus)." đ (30% × lương CB thực nhận)";
+            $remarkParts[] = "Phụ trội đêm: +".number_format($nightShiftBonus)." đ (30% × ".number_format($nightHoursActual,1)."h × lương CB/giờ)";
         if ($otMealDays > 0)
             $remarkParts[] = "Ăn ca OT: +".number_format($otMealBonus)." đ ($otMealDays ngày OT ≥ 3h × ".number_format(self::OT_MEAL_ALLOWANCE)." đ)";
         if ($kpiBonus > 0)
@@ -287,11 +306,17 @@ class PayrollEngine
             'ot_weekday_hours'           => $otWeekdayHours,
             'ot_weekend_hours'           => $otWeekendHours,
             'ot_holiday_hours'           => $otHolidayHours,
-            'ot_night_hours'             => $otNightHours,
+            'ot_night_hours'             => $otNightWeekdayHours + $otNightWeekendHours + $otNightHolidayHours, // backward compat
+            'ot_night_weekday_hours'     => $otNightWeekdayHours,
+            'ot_night_weekend_hours'     => $otNightWeekendHours,
+            'ot_night_holiday_hours'     => $otNightHolidayHours,
             'ot_weekday_amount'          => $otWeekdayAmt,
             'ot_weekend_amount'          => $otWeekendAmt,
             'ot_holiday_amount'          => $otHolidayAmt,
-            'ot_night_amount'            => $otNightAmt,
+            'ot_night_amount'            => $otNightAmt, // backward compat
+            'ot_night_weekday_amount'    => $otNightWeekdayAmt,
+            'ot_night_weekend_amount'    => $otNightWeekendAmt,
+            'ot_night_holiday_amount'    => $otNightHolidayAmt,
             'total_ot_amount'            => $totalOtAmt,
             'kpi_bonus'                  => $kpiBonus,
             'kpi_over_days'              => $kpiOverDays,
@@ -578,10 +603,12 @@ class PayrollEngine
         try {
             $stmt = $this->pdo->prepare("
                 SELECT
-                    COALESCE(SUM(CASE WHEN ot_type = 'weekday' THEN hours ELSE 0 END), 0) AS ot_weekday_hours,
-                    COALESCE(SUM(CASE WHEN ot_type = 'weekend' THEN hours ELSE 0 END), 0) AS ot_weekend_hours,
-                    COALESCE(SUM(CASE WHEN ot_type = 'holiday' THEN hours ELSE 0 END), 0) AS ot_holiday_hours,
-                    COALESCE(SUM(CASE WHEN ot_type = 'night'   THEN hours ELSE 0 END), 0) AS ot_night_hours
+                    COALESCE(SUM(CASE WHEN ot_type = 'weekday'       THEN hours ELSE 0 END), 0) AS ot_weekday_hours,
+                    COALESCE(SUM(CASE WHEN ot_type = 'weekend'       THEN hours ELSE 0 END), 0) AS ot_weekend_hours,
+                    COALESCE(SUM(CASE WHEN ot_type = 'holiday'       THEN hours ELSE 0 END), 0) AS ot_holiday_hours,
+                    COALESCE(SUM(CASE WHEN ot_type = 'night_weekday' THEN hours ELSE 0 END), 0) AS ot_night_weekday_hours,
+                    COALESCE(SUM(CASE WHEN ot_type = 'night_weekend' THEN hours ELSE 0 END), 0) AS ot_night_weekend_hours,
+                    COALESCE(SUM(CASE WHEN ot_type = 'night_holiday' THEN hours ELSE 0 END), 0) AS ot_night_holiday_hours
                 FROM overtime_requests
                 WHERE user_id = ? AND status = 'approved'
                   AND ot_date BETWEEN ? AND ?
@@ -656,10 +683,12 @@ class PayrollEngine
     private function emptyOT(): array
     {
         return [
-            'ot_weekday_hours' => 0,
-            'ot_weekend_hours' => 0,
-            'ot_holiday_hours' => 0,
-            'ot_night_hours'   => 0,
+            'ot_weekday_hours'       => 0,
+            'ot_weekend_hours'       => 0,
+            'ot_holiday_hours'       => 0,
+            'ot_night_weekday_hours' => 0,
+            'ot_night_weekend_hours' => 0,
+            'ot_night_holiday_hours' => 0,
         ];
     }
 
@@ -720,6 +749,45 @@ class PayrollEngine
             return $row && (int)$row['is_night_shift'] === 1;
         } catch (\Throwable $e) {
             return false;
+        }
+    }
+
+    private function getNightHoursWorked(int $userId, string $from, string $to): float
+    {
+        try {
+            // Lấy ca của NV trong kỳ
+            $stmt = $this->pdo->prepare("
+                SELECT ws.is_night_shift
+                FROM employee_shifts es
+                JOIN work_shifts ws ON es.shift_id = ws.id
+                WHERE es.user_id = ?
+                  AND es.effective_date <= ?
+                  AND (es.end_date IS NULL OR es.end_date >= ?)
+                ORDER BY es.effective_date DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$userId, $to, $from]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row || !(int)$row['is_night_shift']) return 0.0;
+
+            // Đếm ngày thực tế đi làm trong kỳ (đã loại CN + lễ)
+            // Dùng LEFT JOIN thay vì IN clause để tránh SQL injection
+            $stmt2 = $this->pdo->prepare("
+                SELECT COUNT(*) FROM attendance_logs al
+                LEFT JOIN holidays h ON h.holiday_date = al.work_date
+                WHERE al.user_id = ?
+                  AND al.check_in IS NOT NULL
+                  AND al.work_date BETWEEN ? AND ?
+                  AND DAYOFWEEK(al.work_date) != 1
+                  AND h.holiday_date IS NULL
+            ");
+            $stmt2->execute([$userId, $from, $to]);
+            $days = (int)$stmt2->fetchColumn();
+
+            return (float)($days * self::WORK_HOURS_PER_DAY);
+        } catch (\Throwable $e) {
+            error_log("getNightHoursWorked error uid=$userId: " . $e->getMessage());
+            return 0.0;
         }
     }
 }

@@ -526,6 +526,12 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             </td>
             <td class="amt pos"><?= number_format($s['attendance_bonus']) ?> đ</td>
         </tr>
+        <?php if ((float)($s['night_shift_bonus'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">(15b) 🌙 Phụ trội làm đêm / Night shift bonus (30%)</td>
+            <td class="amt pos"><?= number_format($s['night_shift_bonus']) ?> đ</td>
+        </tr>
+        <?php endif; ?>
         <!-- OT -->
         <tr>
             <td class="lbl sub">
@@ -548,6 +554,33 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             </td>
             <td class="amt pos"><?= number_format($s['ot_holiday_amount']) ?> đ</td>
         </tr>
+        <?php if ((float)($s['ot_night_weekday_hours'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">
+                (18b) 🌙 OT đêm ngày thường / OT night weekday (×2.1)
+                <span style="color:#888;font-size:11px;">[<?= number_format($s['ot_night_weekday_hours'],2) ?>h]</span>
+            </td>
+            <td class="amt pos"><?= number_format($s['ot_night_weekday_amount']) ?> đ</td>
+        </tr>
+        <?php endif; ?>
+        <?php if ((float)($s['ot_night_weekend_hours'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">
+                (18c) 🌙 OT đêm cuối tuần / OT night weekend (×2.7)
+                <span style="color:#888;font-size:11px;">[<?= number_format($s['ot_night_weekend_hours'],2) ?>h]</span>
+            </td>
+            <td class="amt pos"><?= number_format($s['ot_night_weekend_amount']) ?> đ</td>
+        </tr>
+        <?php endif; ?>
+        <?php if ((float)($s['ot_night_holiday_hours'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">
+                (18d) 🌙 OT đêm ngày lễ / OT night holiday (×3.9)
+                <span style="color:#888;font-size:11px;">[<?= number_format($s['ot_night_holiday_hours'],2) ?>h]</span>
+            </td>
+            <td class="amt pos"><?= number_format($s['ot_night_holiday_amount']) ?> đ</td>
+        </tr>
+        <?php endif; ?>
         <tr class="bold-row">
             <td class="lbl">(19) Tổng tiền làm thêm / Total OT</td>
             <td class="amt pos"><?= number_format($s['total_ot_amount']) ?> đ</td>

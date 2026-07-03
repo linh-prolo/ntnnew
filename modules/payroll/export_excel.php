@@ -150,13 +150,13 @@ function e(string $str): string {
         <th class="hdr2" rowspan="2">Lương CB thực nhận</th>
 
         <!-- OT -->
-        <th class="hdr-ot" colspan="4">Làm thêm giờ (OT)</th>
+        <th class="hdr-ot" colspan="10">Làm thêm giờ (OT)</th>
 
         <!-- Trợ cấp -->
         <th class="hdr-allow" colspan="6">Trợ cấp thực nhận</th>
 
         <!-- Thưởng -->
-        <th class="hdr-bonus" colspan="3">Phụ cấp & Thưởng</th>
+        <th class="hdr-bonus" colspan="4">Phụ cấp & Thưởng</th>
 
         <!-- KPI -->
         <th class="hdr-kpi" colspan="2">KPI</th>
@@ -187,6 +187,12 @@ function e(string $str): string {
         <th class="hdr-ot">Ngày thường (×1.5)<br>Số tiền</th>
         <th class="hdr-ot">Ngày nghỉ (×2.0)<br>Số giờ</th>
         <th class="hdr-ot">Ngày nghỉ (×2.0)<br>Số tiền</th>
+        <th class="hdr-ot">Ngày lễ (×3.0)<br>Số giờ</th>
+        <th class="hdr-ot">Ngày lễ (×3.0)<br>Số tiền</th>
+        <th class="hdr-ot">Đêm thường (×2.1)<br>Số giờ</th>
+        <th class="hdr-ot">Đêm thường (×2.1)<br>Số tiền</th>
+        <th class="hdr-ot">Đêm CN (×2.7)<br>Số giờ</th>
+        <th class="hdr-ot">Đêm CN (×2.7)<br>Số tiền</th>
 
         <!-- Trợ cấp chi tiết -->
         <th class="hdr-allow">Ăn ca</th>
@@ -199,6 +205,7 @@ function e(string $str): string {
         <!-- Thưởng chi tiết -->
         <th class="hdr-bonus">Hiệu quả</th>
         <th class="hdr-bonus">Chuyên cần</th>
+        <th class="hdr-bonus">🌙 Phụ trội đêm (30%)</th>
         <th class="hdr-bonus">Thưởng khác</th>
 
         <!-- KPI chi tiết -->
@@ -236,9 +243,12 @@ function e(string $str): string {
         'basic_salary','basic_salary_received',
         'ot_weekday_hours','ot_weekday_amount',
         'ot_weekend_hours','ot_weekend_amount',
+        'ot_holiday_hours','ot_holiday_amount',
+        'ot_night_weekday_hours','ot_night_weekday_amount',
+        'ot_night_weekend_hours','ot_night_weekend_amount',
         'meal_received','clothes_received','phone_received',
         'transport_received','housing_received',
-        'performance_bonus','attendance_bonus','other_bonus',
+        'performance_bonus','attendance_bonus','night_shift_bonus','other_bonus',
         'kpi_bonus','kpi_deduction',
         'gross_salary',
         'si_employee','pit_amount','late_deduction','advance_payment',
@@ -259,33 +269,40 @@ function e(string $str): string {
         $kpiDeduct   = (float)($s['kpi_deduction'] ?? 0);
 
         // Tích lũy tổng
-        $totals['basic_salary']          += (float)$s['basic_salary'];
-        $totals['basic_salary_received'] += (float)$s['basic_salary_received'];
-        $totals['ot_weekday_hours']      += (float)$s['ot_weekday_hours'];
-        $totals['ot_weekday_amount']     += (float)$s['ot_weekday_amount'];
-        $totals['ot_weekend_hours']      += (float)$s['ot_weekend_hours'];
-        $totals['ot_weekend_amount']     += (float)$s['ot_weekend_amount'];
-        $totals['meal_received']         += (float)$s['meal_received'];
-        $totals['clothes_received']      += (float)$s['clothes_received'];
-        $totals['phone_received']        += (float)$s['phone_received'];
-        $totals['transport_received']    += (float)$s['transport_received'];
-        $totals['housing_received']      += $housing;
-        $totals['performance_bonus']     += (float)$s['performance_bonus'];
-        $totals['attendance_bonus']      += (float)$s['attendance_bonus'];
-        $totals['other_bonus']           += (float)$s['other_bonus'];
-        $totals['kpi_bonus']             += $kpiBonus;
-        $totals['kpi_deduction']         += $kpiDeduct;
-        $totals['gross_salary']          += (float)$s['gross_salary'];
-        $totals['si_employee']           += (float)$s['si_employee'];
-        $totals['pit_amount']            += (float)$s['pit_amount'];
-        $totals['late_deduction']        += (float)$s['late_deduction'];
-        $totals['advance_payment']       += (float)$s['advance_payment'];
-        $totals['other_income']          += (float)$s['other_income'];
-        $totals['adjustment']            += (float)$s['adjustment'];
-        $totals['annual_leave_payout']   += (float)($s['annual_leave_payout'] ?? 0);
-        $totals['net_salary']            += (float)$s['net_salary'];
-        $totals['bank_transfer']         += (float)$s['bank_transfer'];
-        $totals['si_company']            += (float)$s['si_company'];
+        $totals['basic_salary']              += (float)$s['basic_salary'];
+        $totals['basic_salary_received']     += (float)$s['basic_salary_received'];
+        $totals['ot_weekday_hours']          += (float)$s['ot_weekday_hours'];
+        $totals['ot_weekday_amount']         += (float)$s['ot_weekday_amount'];
+        $totals['ot_weekend_hours']          += (float)$s['ot_weekend_hours'];
+        $totals['ot_weekend_amount']         += (float)$s['ot_weekend_amount'];
+        $totals['ot_holiday_hours']          += (float)($s['ot_holiday_hours'] ?? 0);
+        $totals['ot_holiday_amount']         += (float)($s['ot_holiday_amount'] ?? 0);
+        $totals['ot_night_weekday_hours']    += (float)($s['ot_night_weekday_hours'] ?? 0);
+        $totals['ot_night_weekday_amount']   += (float)($s['ot_night_weekday_amount'] ?? 0);
+        $totals['ot_night_weekend_hours']    += (float)($s['ot_night_weekend_hours'] ?? 0);
+        $totals['ot_night_weekend_amount']   += (float)($s['ot_night_weekend_amount'] ?? 0);
+        $totals['meal_received']             += (float)$s['meal_received'];
+        $totals['clothes_received']          += (float)$s['clothes_received'];
+        $totals['phone_received']            += (float)$s['phone_received'];
+        $totals['transport_received']        += (float)$s['transport_received'];
+        $totals['housing_received']          += $housing;
+        $totals['performance_bonus']         += (float)$s['performance_bonus'];
+        $totals['attendance_bonus']          += (float)$s['attendance_bonus'];
+        $totals['night_shift_bonus']         += (float)($s['night_shift_bonus'] ?? 0);
+        $totals['other_bonus']               += (float)$s['other_bonus'];
+        $totals['kpi_bonus']                 += $kpiBonus;
+        $totals['kpi_deduction']             += $kpiDeduct;
+        $totals['gross_salary']              += (float)$s['gross_salary'];
+        $totals['si_employee']               += (float)$s['si_employee'];
+        $totals['pit_amount']                += (float)$s['pit_amount'];
+        $totals['late_deduction']            += (float)$s['late_deduction'];
+        $totals['advance_payment']           += (float)$s['advance_payment'];
+        $totals['other_income']              += (float)$s['other_income'];
+        $totals['adjustment']                += (float)$s['adjustment'];
+        $totals['annual_leave_payout']       += (float)($s['annual_leave_payout'] ?? 0);
+        $totals['net_salary']                += (float)$s['net_salary'];
+        $totals['bank_transfer']             += (float)$s['bank_transfer'];
+        $totals['si_company']                += (float)$s['si_company'];
     ?>
     <tr>
         <!-- Thông tin cơ bản -->
@@ -317,6 +334,12 @@ function e(string $str): string {
         <td class="num"><?= n($s['ot_weekday_amount']) ?></td>
         <td class="num2"><?= n($s['ot_weekend_hours'], 2) ?></td>
         <td class="num"><?= n($s['ot_weekend_amount']) ?></td>
+        <td class="num2"><?= n($s['ot_holiday_hours'] ?? 0, 2) ?></td>
+        <td class="num"><?= n($s['ot_holiday_amount'] ?? 0) ?></td>
+        <td class="num2"><?= n($s['ot_night_weekday_hours'] ?? 0, 2) ?></td>
+        <td class="num"><?= n($s['ot_night_weekday_amount'] ?? 0) ?></td>
+        <td class="num2"><?= n($s['ot_night_weekend_hours'] ?? 0, 2) ?></td>
+        <td class="num"><?= n($s['ot_night_weekend_amount'] ?? 0) ?></td>
 
         <!-- Trợ cấp -->
         <td class="num"><?= n($s['meal_received']) ?></td>
@@ -329,6 +352,7 @@ function e(string $str): string {
         <!-- Thưởng -->
         <td class="num"><?= n($s['performance_bonus']) ?></td>
         <td class="num pos"><?= n($s['attendance_bonus']) ?></td>
+        <td class="num pos"><?= n($s['night_shift_bonus'] ?? 0) ?></td>
         <td class="num"><?= n($s['other_bonus']) ?></td>
 
         <!-- KPI -->
@@ -382,6 +406,12 @@ function e(string $str): string {
         <td class="foot num"><?= n($totals['ot_weekday_amount']) ?></td>
         <td class="foot num2"><?= n($totals['ot_weekend_hours'], 2) ?></td>
         <td class="foot num"><?= n($totals['ot_weekend_amount']) ?></td>
+        <td class="foot num2"><?= n($totals['ot_holiday_hours'], 2) ?></td>
+        <td class="foot num"><?= n($totals['ot_holiday_amount']) ?></td>
+        <td class="foot num2"><?= n($totals['ot_night_weekday_hours'], 2) ?></td>
+        <td class="foot num"><?= n($totals['ot_night_weekday_amount']) ?></td>
+        <td class="foot num2"><?= n($totals['ot_night_weekend_hours'], 2) ?></td>
+        <td class="foot num"><?= n($totals['ot_night_weekend_amount']) ?></td>
         <td class="foot num"><?= n($totals['meal_received']) ?></td>
         <td class="foot num"><?= n($totals['clothes_received']) ?></td>
         <td class="foot num"><?= n($totals['phone_received']) ?></td>
@@ -390,6 +420,7 @@ function e(string $str): string {
         <td class="foot num"><?= n($totals['meal_received']+$totals['clothes_received']+$totals['phone_received']+$totals['transport_received']+$totals['housing_received']) ?></td>
         <td class="foot num"><?= n($totals['performance_bonus']) ?></td>
         <td class="foot num"><?= n($totals['attendance_bonus']) ?></td>
+        <td class="foot num pos"><?= n($totals['night_shift_bonus']) ?></td>
         <td class="foot num"><?= n($totals['other_bonus']) ?></td>
         <td class="foot num pos"><?= n($totals['kpi_bonus']) ?></td>
         <td class="foot num neg"><?= n($totals['kpi_deduction']) ?></td>
