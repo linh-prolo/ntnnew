@@ -1,29 +1,42 @@
 <?php
-// Chỉ chạy từ CLI hoặc localhost
-if (php_sapi_name() !== 'cli' && $_SERVER['REMOTE_ADDR'] !== '127.0.0.1') {
+// Chỉ chạy từ CLI hoặc localhost (IPv4 và IPv6)
+$remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+if (php_sapi_name() !== 'cli' && $remoteAddr !== '127.0.0.1' && $remoteAddr !== '::1') {
     die('Chỉ được chạy từ localhost hoặc CLI');
 }
-require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
+// Dùng __DIR__ để hoạt động đúng cả khi chạy từ CLI lẫn web
+require_once __DIR__ . '/../../config/database.php';
 $pdo = getDBConnection();
 
-$sql = "
-ALTER TABLE payroll_slips
-    ADD COLUMN IF NOT EXISTS ot_night_weekday_hours  DECIMAL(6,2) NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS ot_night_weekday_amount INT          NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS ot_night_weekend_hours  DECIMAL(6,2) NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS ot_night_weekend_amount INT          NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS ot_night_holiday_hours  DECIMAL(6,2) NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS ot_night_holiday_amount INT          NOT NULL DEFAULT 0
-";
+// Dùng stored procedure để tương thích cả MySQL 5.7 và 8.0+
+$statements = [
+    "DROP PROCEDURE IF EXISTS _add_night_ot_columns",
+    "CREATE PROCEDURE _add_night_ot_columns()
+     BEGIN
+         IF NOT EXISTS (
+             SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME   = 'payroll_slips'
+               AND COLUMN_NAME  = 'ot_night_weekday_hours'
+         ) THEN
+             ALTER TABLE payroll_slips
+                 ADD COLUMN ot_night_weekday_hours  DECIMAL(6,2) NOT NULL DEFAULT 0,
+                 ADD COLUMN ot_night_weekday_amount INT          NOT NULL DEFAULT 0,
+                 ADD COLUMN ot_night_weekend_hours  DECIMAL(6,2) NOT NULL DEFAULT 0,
+                 ADD COLUMN ot_night_weekend_amount INT          NOT NULL DEFAULT 0,
+                 ADD COLUMN ot_night_holiday_hours  DECIMAL(6,2) NOT NULL DEFAULT 0,
+                 ADD COLUMN ot_night_holiday_amount INT          NOT NULL DEFAULT 0;
+         END IF;
+     END",
+    "CALL _add_night_ot_columns()",
+    "DROP PROCEDURE IF EXISTS _add_night_ot_columns",
+];
 
 try {
-    $pdo->exec($sql);
+    foreach ($statements as $sql) {
+        $pdo->exec($sql);
+    }
     echo "✅ Migration thành công! Đã thêm các cột OT đêm vào bảng payroll_slips.\n";
 } catch (PDOException $e) {
-    // Nếu cột đã tồn tại thì bỏ qua lỗi 1060
-    if (strpos($e->getMessage(), '1060') !== false) {
-        echo "ℹ️ Các cột đã tồn tại, không cần chạy lại.\n";
-    } else {
-        echo "❌ Lỗi: " . $e->getMessage() . "\n";
-    }
+    echo "❌ Lỗi: " . $e->getMessage() . "\n";
 }
