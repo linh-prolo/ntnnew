@@ -59,6 +59,7 @@ $gross = (float)$slip['basic_salary_received']
        + (float)($slip['housing_received'] ?? 0)
        + $responsibility
        + $seniority
+       + (float)($slip['night_shift_bonus'] ?? 0)
        + (float)($slip['attendance_bonus'] ?? 0)
        + (float)($slip['total_ot_amount'] ?? 0)
        + (float)($slip['kpi_bonus'] ?? 0)

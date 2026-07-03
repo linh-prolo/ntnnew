@@ -158,7 +158,7 @@ class PayrollEngine
         $totalPerHour  = round($salaryPerDay / self::WORK_HOURS_PER_DAY);
 
 
-        // Lương 1h = (Lương cơ bản + PC Trách nhiệm + PC Kỹ năng) / ngày công chuẩn / 8
+        // Lương 1h = (Lương cơ bản + PC Trách nhiệm + PC Thâm niên) / ngày công chuẩn / 8
         $responsibilityAllow = (int)($salary['responsibility_allowance'] ?? 0);
         $seniorityAllow      = (int)($salary['seniority_allowance']      ?? 0);
         $otBase              = $basicSalary + $responsibilityAllow + $seniorityAllow;
