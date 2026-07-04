@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $redirectRaw = $_GET['redirect'] ?? '';
                 $redirect = (str_starts_with($redirectRaw, '/erp/') && !str_contains($redirectRaw, '//'))
                     ? $redirectRaw
-                    : '/erp/dashboard.php';
+                    : ($user['role'] === 'employee' ? '/erp/mobile/index.php' : '/erp/dashboard.php');
                 header("Location: " . $redirect);
                 exit();
             } elseif ($user && !$user['is_active']) {
