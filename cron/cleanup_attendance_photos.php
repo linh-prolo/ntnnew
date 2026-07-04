@@ -5,7 +5,8 @@
  */
 
 $uploadBase = dirname(__DIR__) . '/uploads/attendance/';
-$cutoff = date('Y-m-d', strtotime('-2 months'));
+$retentionInterval = '-2 months';
+$cutoff = date('Y-m-d', strtotime($retentionInterval));
 
 if (!is_dir($uploadBase)) {
     exit(0);

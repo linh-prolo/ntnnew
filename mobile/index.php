@@ -92,6 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $photoData = trim((string)($_POST['photo_data'] ?? ''));
     $photoPath = null;
     $photoPrefix = 'data:image/jpeg;base64,';
+    $minPhotoBytes = 1000;
+    $maxPhotoBytes = 800000;
+    $maxCompressedPhotoBytes = 300000;
 
     if ($photoData === '' || !str_starts_with($photoData, $photoPrefix)) {
         setFlash('danger', '📸 Không thể chấm công: Vui lòng chụp ảnh xác nhận trước khi chấm công.');
@@ -101,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $base64 = substr($photoData, strlen($photoPrefix));
     $imgBinary = base64_decode($base64, true);
-    if ($imgBinary === false || strlen($imgBinary) < 1000 || strlen($imgBinary) > 800000) {
+    if ($imgBinary === false || strlen($imgBinary) < $minPhotoBytes || strlen($imgBinary) > $maxPhotoBytes) {
         setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng thử lại.');
         header('Location: /erp/mobile/index.php');
         exit();
@@ -132,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $compressedBinary = (string)ob_get_clean();
     imagedestroy($image);
 
-    if ($compressedBinary === '' || strlen($compressedBinary) < 1000 || strlen($compressedBinary) > 300000) {
+    if ($compressedBinary === '' || strlen($compressedBinary) < $minPhotoBytes || strlen($compressedBinary) > $maxCompressedPhotoBytes) {
         setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng chụp lại gần khuôn mặt hơn.');
         header('Location: /erp/mobile/index.php');
         exit();
@@ -616,6 +619,7 @@ const displayIpEl = document.getElementById('displayIp');
 let gpsReady = false;
 let photoReady = false;
 let stream = null;
+const MAX_PHOTO_BYTES = 300000;
 
 if (displayIpEl) {
     fetch('/erp/api/attendance/get_ip.php')
@@ -715,7 +719,7 @@ btnCapture?.addEventListener('click', () => {
 
     const imgData = photoCanvas.toDataURL('image/jpeg', 0.8);
     const approxBytes = Math.ceil((imgData.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
-    if (approxBytes > 300000) {
+    if (approxBytes > MAX_PHOTO_BYTES) {
         alert('Ảnh chụp quá lớn. Vui lòng chụp lại gần hơn.');
         return;
     }
