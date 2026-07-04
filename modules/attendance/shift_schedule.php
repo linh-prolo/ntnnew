@@ -14,18 +14,17 @@ $filterDept = (int)($_GET['dept'] ?? 0);
 if ($viewMonth < 1)  { $viewMonth = 12; $viewYear--; }
 if ($viewMonth > 12) { $viewMonth = 1;  $viewYear++; }
 
-// Lấy danh sách nhân viên + ca trong tháng
-$sql = "SELECT u.id, u.full_name, u.employee_code, d.name AS dept_name,
-               ws.shift_name, ws.color AS shift_color,
-               ws.start_time, ws.end_time, ws.shift_code
+$daysInMon = cal_days_in_month(CAL_GREGORIAN, $viewMonth, $viewYear);
+$firstDay  = sprintf('%04d-%02d-01', $viewYear, $viewMonth);
+$lastDay   = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $daysInMon);
+
+// Lấy danh sách nhân viên (không JOIN employee_shifts để tránh fan-out)
+$sql = "SELECT u.id, u.full_name, u.employee_code, u.department_id,
+               d.name AS dept_name
         FROM users u
         LEFT JOIN departments d ON u.department_id = d.id
-        LEFT JOIN employee_shifts es ON es.user_id = u.id
-            AND es.effective_date <= LAST_DAY(?)
-            AND (es.end_date IS NULL OR es.end_date >= ?)
-        LEFT JOIN work_shifts ws ON es.shift_id = ws.id
         WHERE u.is_active = 1";
-$params = ["$viewYear-$viewMonth-01", "$viewYear-$viewMonth-01"];
+$params = [];
 
 if ($filterDept) {
     $sql .= " AND u.department_id = ?";
@@ -36,6 +35,35 @@ $sql .= " ORDER BY d.name, u.full_name";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $employees = $stmt->fetchAll();
+
+// Query tất cả ca phân công trong tháng (hỗ trợ nhiều ca/tháng)
+$shiftStmt = $pdo->prepare("
+    SELECT es.user_id, es.effective_date, es.end_date,
+           ws.shift_name, ws.shift_code, ws.color AS shift_color,
+           ws.start_time, ws.end_time, ws.is_night_shift
+    FROM employee_shifts es
+    JOIN work_shifts ws ON es.shift_id = ws.id
+    WHERE es.effective_date <= :lastDay
+      AND (es.end_date IS NULL OR es.end_date >= :firstDay)
+    ORDER BY es.user_id, es.effective_date ASC
+");
+$shiftStmt->execute([':lastDay' => $lastDay, ':firstDay' => $firstDay]);
+
+// Build map: $shiftMap[user_id] = [ ['effective_date'=>..., 'end_date'=>..., ...], ... ]
+$shiftMap = [];
+foreach ($shiftStmt->fetchAll() as $s) {
+    $shiftMap[$s['user_id']][] = $s;
+}
+
+// Helper: trả về ca áp dụng cho ngày đã cho
+function getShiftForDate(int $userId, string $date, array $shiftMap): ?array {
+    foreach ($shiftMap[$userId] ?? [] as $s) {
+        $from = $s['effective_date'];
+        $to   = $s['end_date'] ?? '9999-12-31';
+        if ($date >= $from && $date <= $to) return $s;
+    }
+    return null;
+}
 
 // Lấy chấm công trong tháng
 $attStmt = $pdo->prepare("
@@ -70,8 +98,7 @@ foreach ($leaveStmt->fetchAll() as $lv) {
     }
 }
 
-$depts     = $pdo->query("SELECT * FROM departments ORDER BY name")->fetchAll();
-$daysInMon = cal_days_in_month(CAL_GREGORIAN, $viewMonth, $viewYear);
+$depts = $pdo->query("SELECT * FROM departments ORDER BY name")->fetchAll();
 
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
@@ -127,6 +154,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 
     <!-- Chú thích -->
     <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="legend-item"><span style="display:inline-block;width:16px;height:12px;background:#ffffff;border:1px solid #dee2e6;border-radius:2px;"></span> Ca ngày</span>
+        <span class="legend-item"><span style="display:inline-block;width:16px;height:12px;background:#e8f0ff;border:1px solid #b8c8ff;border-radius:2px;"></span> Ca đêm</span>
         <span class="legend-item"><span class="dot bg-success"></span>Đúng giờ</span>
         <span class="legend-item"><span class="dot bg-warning"></span>Đi trễ</span>
         <span class="legend-item"><span class="dot bg-info"></span>Nghỉ phép</span>
@@ -185,28 +214,37 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <div class="fw-semibold small"><?= htmlspecialchars($emp['full_name']) ?></div>
                             <div class="text-muted" style="font-size:10px;"><?= $emp['employee_code'] ?></div>
                         </td>
-                        <!-- Ca mặc định -->
+                        <!-- Ca (timeline trong tháng) -->
                         <td class="text-center">
-                            <?php if ($emp['shift_name']): ?>
-                            <span class="badge" style="background:<?= $emp['shift_color'] ?>; font-size:10px; white-space:nowrap;">
-                                <?= htmlspecialchars($emp['shift_code']) ?>
-                            </span>
-                            <div style="font-size:9px; color:#666;">
-                                <?= substr($emp['start_time'],0,5) ?>–<?= substr($emp['end_time'],0,5) ?>
+                            <?php
+                            $userShifts = $shiftMap[$emp['id']] ?? [];
+                            if (empty($userShifts)): ?>
+                            <span style="font-size:10px;color:red;">Chưa có</span>
+                            <?php else:
+                                foreach ($userShifts as $s):
+                                    $sfrom = max($s['effective_date'], $firstDay);
+                                    $sto   = min($s['end_date'] ?? '9999-12-31', $lastDay);
+                                    $fromDay = (int)substr($sfrom, 8, 2);
+                                    $toDay   = $s['end_date'] ? (int)substr($sto, 8, 2) : $daysInMon;
+                            ?>
+                            <div class="mb-1">
+                                <span class="badge" style="background:<?= htmlspecialchars($s['shift_color']) ?>; font-size:10px;"><?= htmlspecialchars($s['shift_code']) ?></span>
+                                <div style="font-size:9px;color:#666;"><?= $fromDay ?>–<?= $toDay ?></div>
                             </div>
-                            <?php else: ?>
-                            <span style="font-size:10px; color:red;">Chưa có</span>
-                            <?php endif; ?>
+                            <?php endforeach; endif; ?>
                         </td>
 
                         <!-- Từng ngày -->
                         <?php for ($d = 1; $d <= $daysInMon; $d++):
-                            $dateStr = "$viewYear-" . str_pad($viewMonth,2,'0',STR_PAD_LEFT) . "-" . str_pad($d,2,'0',STR_PAD_LEFT);
+                            $dateStr = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $d);
                             $dow = date('N', strtotime($dateStr));
                             $isSun = $dow == 7;
                             $isFuture = $dateStr > date('Y-m-d');
                             $att   = $attMap[$emp['id']][$dateStr] ?? null;
                             $leave = $leaveMap[$emp['id']][$dateStr] ?? null;
+
+                            $shiftToday = getShiftForDate($emp['id'], $dateStr, $shiftMap);
+                            $isNightDay = !empty($shiftToday['is_night_shift']);
 
                             $cellBg = ''; $cellContent = '';
 
@@ -214,23 +252,24 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 $cellBg = '#f8f9fa';
                                 $cellContent = '<span style="font-size:10px;color:#aaa;">CN</span>';
                             } elseif ($isFuture) {
+                                $cellBg = $isNightDay ? '#f0f4ff' : '';
                                 $cellContent = '';
                             } elseif ($leave && !$att) {
                                 $leaveDays++;
                                 $cellBg = '#e8f4fd';
-                                $cellContent = '<span style="font-size:11px;">🏖️</span>';
+                                $cellContent = '<span style="font-size:11px;" title="Nghỉ phép">🏖️</span>';
                             } elseif ($att && $att['check_in']) {
                                 $workDays++;
                                 if ($att['is_late']) {
                                     $lateDays++;
-                                    $cellBg = '#fffbf0';
+                                    $cellBg = $isNightDay ? '#dde8ff' : '#fffbf0';
                                     $cellContent = '<span class="text-warning fw-bold" style="font-size:11px;" title="Trễ ' . $att['late_minutes'] . ' phút">⚡</span>';
                                 } else {
-                                    $cellBg = '#f0fff4';
+                                    $cellBg = $isNightDay ? '#e8f0ff' : '#ffffff';
                                     $cellContent = '<span class="text-success fw-bold" style="font-size:11px;">✓</span>';
                                 }
-                            } elseif (!$isFuture) {
-                                $cellBg = '#fff5f5';
+                            } else {
+                                $cellBg = $isNightDay ? '#f5e8ff' : '#fff5f5';
                                 $cellContent = '<span class="text-danger" style="font-size:11px;">✗</span>';
                             }
                         ?>
