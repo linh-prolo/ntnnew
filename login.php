@@ -3,11 +3,6 @@ require_once 'config/database.php';
 require_once 'config/auth.php';
 require_once 'config/functions.php';
 
-if (isLoggedIn()) {
-    header('Location: /erp/dashboard.php');
-    exit();
-}
-
 // ── Detect thiết bị di động qua User-Agent ────────────────────────────────
 function isMobileDevice(): bool {
     $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
@@ -15,6 +10,17 @@ function isMobileDevice(): bool {
         '/Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i',
         $ua
     );
+}
+
+// Nếu đã đăng nhập → redirect đúng theo role + thiết bị
+if (isLoggedIn()) {
+    $role = $_SESSION['role'] ?? '';
+    if ($role !== 'director' && ($role === 'employee' || isMobileDevice())) {
+        header('Location: /erp/mobile/index.php');
+    } else {
+        header('Location: /erp/dashboard.php');
+    }
+    exit();
 }
 
 $error = '';
@@ -30,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.';
         } else {
             $pdo  = getDBConnection();
-            // FIX: tìm theo username HOẶC employee_code
             $stmt = $pdo->prepare("
                 SELECT u.id, u.employee_code, u.full_name, u.username,
                        u.password_hash, u.is_active, u.department_id,
@@ -56,13 +61,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $redirectRaw = $_GET['redirect'] ?? '';
                 if ($redirectRaw && str_starts_with($redirectRaw, '/erp/') && !str_contains($redirectRaw, '//')) {
-                    // Có redirect URL cụ thể → dùng luôn
                     $redirect = $redirectRaw;
                 } else {
                     $role = $user['role'];
-                    // director luôn vào dashboard dù dùng thiết bị gì
-                    // employee luôn vào mobile
-                    // các role còn lại: mobile nếu dùng điện thoại, dashboard nếu dùng máy tính
+                    // director → luôn dashboard
+                    // employee → luôn mobile
+                    // các role còn lại → mobile nếu dùng điện thoại, dashboard nếu máy tính
                     if ($role === 'director') {
                         $redirect = '/erp/dashboard.php';
                     } elseif ($role === 'employee' || isMobileDevice()) {
@@ -160,7 +164,7 @@ $csrf = generateCSRF();
     <div class="login-logo">
         <div class="logo-icon">🏢</div>
         <h4>NTN VIỆT NAM - ERP System</h4>
-        <p>ÔNG TY CP SẢN XUẤT VÀ CUNG ỨNG NTN VIỆT NAM</p>
+        <p>CÔNG TY CP SẢN XUẤT VÀ CUNG ỨNG NTN VIỆT NAM</p>
     </div>
 
     <?php if ($error): ?>
@@ -203,7 +207,6 @@ $csrf = generateCSRF();
         <i class="fas fa-info-circle me-1"></i>
         Đăng nhập bằng <strong>Mã nhân viên</strong> (VD: <strong>NV001</strong>)
         hoặc <strong>tên đăng nhập</strong> đã được cấp.
-        
     </div>
 </div>
 
