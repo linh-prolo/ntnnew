@@ -23,13 +23,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $reason = trim($_POST['reason'] ?? '');
 
     $validTypes = ['weekday', 'weekend', 'holiday', 'night_weekday', 'night_weekend', 'night_holiday'];
-    if ($otDate === '') $errors[] = 'Vui lòng chọn ngày OT.';
+    $otDateObj = null;
+    if ($otDate === '') {
+        $errors[] = 'Vui lòng chọn ngày OT.';
+    } else {
+        $otDateObj = DateTime::createFromFormat('Y-m-d', $otDate);
+        if (!$otDateObj || $otDateObj->format('Y-m-d') !== $otDate) {
+            $errors[] = 'Ngày OT không hợp lệ.';
+        } elseif ($otDateObj < new DateTime('today')) {
+            $errors[] = 'Không thể đăng ký OT cho ngày đã qua.';
+        }
+    }
     if (!in_array($otType, $validTypes, true)) $errors[] = 'Loại OT không hợp lệ.';
     if ($startTime === '') $errors[] = 'Vui lòng nhập giờ bắt đầu.';
     if ($hours <= 0) $errors[] = 'Số giờ OT phải lớn hơn 0.';
     if ($hours > 12) $errors[] = 'OT không được vượt quá 12 giờ/ngày.';
     if ($reason === '') $errors[] = 'Vui lòng nhập lý do OT.';
-    if ($otDate !== '' && $otDate < date('Y-m-d')) $errors[] = 'Không thể đăng ký OT cho ngày đã qua.';
 
     $endTime = '';
     if (empty($errors)) {
