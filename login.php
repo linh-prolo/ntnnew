@@ -8,6 +8,15 @@ if (isLoggedIn()) {
     exit();
 }
 
+// ── Detect thiết bị di động qua User-Agent ────────────────────────────────
+function isMobileDevice(): bool {
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    return (bool) preg_match(
+        '/Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i',
+        $ua
+    );
+}
+
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -46,9 +55,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['login_time']    = time();
 
                 $redirectRaw = $_GET['redirect'] ?? '';
-                $redirect = (str_starts_with($redirectRaw, '/erp/') && !str_contains($redirectRaw, '//'))
-                    ? $redirectRaw
-                    : ($user['role'] === 'employee' ? '/erp/mobile/index.php' : '/erp/dashboard.php');
+                if ($redirectRaw && str_starts_with($redirectRaw, '/erp/') && !str_contains($redirectRaw, '//')) {
+                    // Có redirect URL cụ thể → dùng luôn
+                    $redirect = $redirectRaw;
+                } else {
+                    $role = $user['role'];
+                    // director luôn vào dashboard dù dùng thiết bị gì
+                    // employee luôn vào mobile
+                    // các role còn lại: mobile nếu dùng điện thoại, dashboard nếu dùng máy tính
+                    if ($role === 'director') {
+                        $redirect = '/erp/dashboard.php';
+                    } elseif ($role === 'employee' || isMobileDevice()) {
+                        $redirect = '/erp/mobile/index.php';
+                    } else {
+                        $redirect = '/erp/dashboard.php';
+                    }
+                }
+
                 header("Location: " . $redirect);
                 exit();
             } elseif ($user && !$user['is_active']) {
