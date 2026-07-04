@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ── Xử lý ảnh chụp ────────────────────────────────────────────────────
-    $photoData = trim((string)($_POST['photo_data'] ?? ''));
+    $photoData = trim($_POST['photo_data'] ?? '');
     $photoPath = null;
     $photoPrefix = 'data:image/jpeg;base64,';
     // Giới hạn đầu vào gốc lớn hơn file nén để tránh payload base64 quá lớn.
@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    $base64 = substr($photoData, strlen($photoPrefix));
+    $base64 = substr($photoData, 23);
     $imgBinary = base64_decode($base64, true);
     if ($imgBinary === false || strlen($imgBinary) < $minPhotoBytes || strlen($imgBinary) > $maxPhotoBytes) {
         setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng thử lại.');
@@ -745,7 +745,7 @@ btnRetake?.addEventListener('click', () => {
 
 btnConfirmPhoto?.addEventListener('click', () => {
     if (!formEl || !gpsReady || !photoReady) return;
-    const action = '<?= $canCheckIn ? 'check_in' : 'check_out' ?>';
+    const action = <?= json_encode($canCheckIn ? 'check_in' : 'check_out') ?>;
     const actionText = action === 'check_in' ? 'VÀO' : 'RA';
     if (!confirm(`Xác nhận chấm công ${actionText} lúc ${new Date().toLocaleTimeString('vi-VN')}?`)) return;
     stopCamera();

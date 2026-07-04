@@ -6,7 +6,11 @@
 
 $uploadBase = dirname(__DIR__) . '/uploads/attendance/';
 $retentionInterval = getenv('ATTENDANCE_PHOTO_RETENTION_INTERVAL') ?: '-2 months';
-$cutoff = date('Y-m-d', strtotime($retentionInterval));
+$cutoffTimestamp = strtotime($retentionInterval);
+if ($cutoffTimestamp === false) {
+    $cutoffTimestamp = strtotime('-2 months');
+}
+$cutoff = date('Y-m-d', $cutoffTimestamp);
 
 if (!is_dir($uploadBase)) {
     exit(0);
