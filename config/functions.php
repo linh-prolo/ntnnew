@@ -212,6 +212,30 @@ function getClientIp(): string {
     return 'unknown';
 }
 
+/**
+ * Trả về level số của từng role (dùng để so sánh cấp bậc).
+ * Level cao hơn = quyền hạn cao hơn.
+ */
+function getRoleLevel(string $role): int {
+    return match($role) {
+        'employee'   => 1,
+        'production' => 2,
+        'manager'    => 3,
+        'accountant' => 4,
+        'director'   => 5,
+        default      => 0,
+    };
+}
+
+/**
+ * Kiểm tra người duyệt ($approver) có quyền duyệt đơn của $requester không.
+ * Điều kiện: level của approver > level của requester VÀ approver != requester (khác user_id).
+ */
+function canApprove(array $approver, array $requester): bool {
+    if ($approver['id'] === $requester['id']) return false;        // không tự duyệt
+    return getRoleLevel($approver['role']) > getRoleLevel($requester['role']); // phải cao hơn cấp
+}
+
 function resolveAttendanceLocation(PDO $pdo, ?float $lat, ?float $lng): array {
     $ip = getClientIp();
     $isWhitelisted = false;

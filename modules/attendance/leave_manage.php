@@ -13,6 +13,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $action = $_POST['action']; // approved / rejected
     $reason = trim($_POST['reject_reason'] ?? '');
 
+    // Lấy role của người tạo đơn
+    $ownerStmt = $pdo->prepare("SELECT u.id, u.role FROM leave_requests lr JOIN users u ON lr.user_id = u.id WHERE lr.id = ? AND lr.status = 'pending'");
+    $ownerStmt->execute([$id]);
+    $owner = $ownerStmt->fetch();
+
+    if (!$owner || !canApprove($user, $owner)) {
+        setFlash('danger', '⛔ Bạn không có quyền duyệt đơn này.');
+        header('Location: /erp/modules/attendance/leave_manage.php');
+        exit();
+    }
+
     $stmt = $pdo->prepare("UPDATE leave_requests SET status=?, approved_by=?, approved_at=NOW(), reject_reason=? WHERE id=? AND status='pending'");
     $stmt->execute([$action, $user['id'], $reason, $id]);
 
@@ -31,20 +42,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 }
 
 $filter = $_GET['filter'] ?? 'pending';
-$stmt = $pdo->prepare("
-    SELECT lr.*, u.full_name, u.employee_code,
-           d.name as department_name,
-           a.full_name as approver_name
-    FROM leave_requests lr
-    JOIN users u ON lr.user_id = u.id
-    LEFT JOIN departments d ON u.department_id = d.id
-    LEFT JOIN users a ON lr.approved_by = a.id
-    WHERE (? = 'all' OR lr.status = ?)
-    ORDER BY lr.created_at DESC
-    LIMIT 50
-");
-$stmt->execute([$filter, $filter]);
-$requests = $stmt->fetchAll();
+
+// Xác định role level của người dùng hiện tại để filter đơn được phép duyệt
+$myLevel = getRoleLevel($user['role']);
+// Compute the list of roles this user can approve, derived from getRoleLevel()
+$allRoles = ['employee', 'production', 'manager', 'accountant', 'director'];
+$approvableRoles = array_values(array_filter($allRoles, fn($r) => getRoleLevel($r) < $myLevel));
+
+if (empty($approvableRoles)) {
+    $requests = [];
+} else {
+    $rolePlaceholders = implode(',', array_fill(0, count($approvableRoles), '?'));
+    $stmt = $pdo->prepare("
+        SELECT lr.*, u.full_name, u.employee_code, u.role AS requester_role,
+               d.name as department_name,
+               a.full_name as approver_name
+        FROM leave_requests lr
+        JOIN users u ON lr.user_id = u.id
+        LEFT JOIN departments d ON u.department_id = d.id
+        LEFT JOIN users a ON lr.approved_by = a.id
+        WHERE (? = 'all' OR lr.status = ?)
+          AND lr.user_id != ?
+          AND u.role IN ($rolePlaceholders)
+        ORDER BY lr.created_at DESC
+        LIMIT 50
+    ");
+    $stmt->execute(array_merge([$filter, $filter, $user['id']], $approvableRoles));
+    $requests = $stmt->fetchAll();
+}
 
 $csrf = generateCSRF();
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
@@ -89,7 +114,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <span class="badge bg-<?= $badges[$r['status']] ?>"><?= $labels[$r['status']] ?></span>
                         </td>
                         <td>
-                        <?php if ($r['status'] === 'pending'): ?>
+                        <?php
+                        $requesterForCheck = ['id' => $r['user_id'], 'role' => $r['requester_role']];
+                        if ($r['status'] === 'pending' && canApprove($user, $requesterForCheck)): ?>
                             <div class="d-flex gap-1">
                                 <form method="POST" style="display:inline">
                                     <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
