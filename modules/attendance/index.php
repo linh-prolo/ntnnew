@@ -351,7 +351,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <tbody>
                         <?php
                         $firstDay    = mktime(0,0,0,$viewMonth,1,$viewYear);
-                        $daysInMonth = cal_days_in_month(CAL_GREGORIAN,$viewMonth,$viewYear);
+                        $daysInMonth = (int) date('t', mktime(0, 0, 0, $viewMonth, 1, $viewYear));
                         $startDow    = date('N', $firstDay);
                         echo '<tr>';
                         for ($i = 1; $i < $startDow; $i++) echo '<td class="bg-light"></td>';

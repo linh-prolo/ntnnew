@@ -38,7 +38,7 @@ function showFlash() {
 // ---- Lấy ngày làm việc trong tháng (trừ Chủ Nhật) ----
 function getWorkingDaysInMonth($year, $month) {
     $days = [];
-    $totalDays = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+    $totalDays = (int) date('t', mktime(0, 0, 0, $month, 1, $year));
     for ($d = 1; $d <= $totalDays; $d++) {
         $date = "$year-$month-$d";
         $dow = date('N', strtotime($date)); // 7 = Sunday

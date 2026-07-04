@@ -22,7 +22,7 @@ if ($viewMonth < 1)  { $viewMonth = 12; $viewYear--; }
 if ($viewMonth > 12) { $viewMonth = 1;  $viewYear++; }
 
 $viewDay   = (int)($_GET['day'] ?? date('j'));
-$daysInMon = cal_days_in_month(CAL_GREGORIAN, $viewMonth, $viewYear);
+$daysInMon = (int) date('t', mktime(0, 0, 0, $viewMonth, 1, $viewYear));
 if ($viewDay < 1 || $viewDay > $daysInMon) $viewDay = (int)date('j');
 
 $empSQL = "SELECT u.id, u.full_name, u.employee_code, d.name AS dept_name, d.id AS dept_id,

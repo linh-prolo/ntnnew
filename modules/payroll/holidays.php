@@ -227,7 +227,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     // Tính ngày công chuẩn sơ bộ cả năm
                     $totalWorkingDays = 0;
                     for ($m = 1; $m <= 12; $m++) {
-                        $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $m, $selectedYear);
+                        $daysInMonth = (int) date('t', mktime(0, 0, 0, $m, 1, $selectedYear));
                         $from = "$selectedYear-" . str_pad($m,2,'0',STR_PAD_LEFT) . "-01";
                         $to   = "$selectedYear-" . str_pad($m,2,'0',STR_PAD_LEFT) . "-$daysInMonth";
                         $current = new DateTime($from);
