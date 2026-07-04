@@ -64,7 +64,7 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
       </a>
       <ul class="sidebar-submenu" id="grp-attendance">
         <li><a class="nav-link <?= isActive('/attendance/index') ?>" href="/erp/modules/attendance/index.php">
-          <i class="fas fa-calendar-check"></i><span>Lịch chấm công</span></a></li>
+          <i class="fas fa-calendar-check"></i><span>CHẤM CÔNG</span></a></li>
         <?php if (hasRole('employee','production','warehouse')): ?>
         <li><a class="nav-link <?= isActive('/leave_request') ?>" href="/erp/modules/attendance/leave_request.php">
           <i class="fas fa-calendar-minus"></i><span>Xin nghỉ phép</span></a></li>
