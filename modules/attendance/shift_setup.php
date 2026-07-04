@@ -473,7 +473,7 @@ document.getElementById('isNightShift')?.addEventListener('change', function() {
     updatePreview();
 });
 // Gọi ngay khi load để hiện đúng box
-updateOTRateBox();
+document.getElementById('isNightShift') && updateOTRateBox();
 
 // Gắn events
 ['startTime','endTime','breakMin'].forEach(id => {
