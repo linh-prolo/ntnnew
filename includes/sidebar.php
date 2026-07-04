@@ -26,6 +26,7 @@ elseif (isGroupActive(['/production/'])) $activeGroup = 'production';
 elseif (isGroupActive(['/warehouse_admin/'])) $activeGroup = 'wh_admin';
 elseif (isGroupActive(['/invoice/'])) $activeGroup = 'invoice';
 elseif (isGroupActive(['/admin/expenses', '/admin/assets', '/admin/vehicles', '/admin/budget'])) $activeGroup = 'admin';
+elseif (isGroupActive(['/audit_log'])) $activeGroup = 'admin';
 elseif (isGroupActive(['/modules/kpi/'])) $activeGroup = 'kpi';
 elseif (isGroupActive(['/reports/'])) $activeGroup = 'reports';
 elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
@@ -206,6 +207,10 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
         <?php if (hasRole('director','accountant','manager')): ?>
         <li><a class="nav-link <?= isActive('/admin/vehicles') ?>" href="/erp/modules/admin/vehicles.php">
           <i class="fas fa-car"></i><span>Phương tiện</span></a></li>
+        <?php endif; ?>
+        <?php if (hasRole('director')): ?>
+        <li><a class="nav-link <?= isActive('/audit_log') ?>" href="/erp/modules/admin/audit_log.php">
+          <i class="fas fa-history"></i><span>Lịch sử hệ thống</span></a></li>
         <?php endif; ?>
       </ul>
     </li>

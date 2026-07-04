@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 header('Content-Type: application/json');
 requireRole('director');
 
@@ -14,6 +15,11 @@ $date     = $body['date']           ?? '';
 $checkIn  = $body['check_in']       ?? '';
 $checkOut = $body['check_out']      ?? '';
 $note     = trim($body['note']      ?? '');
+$action   = $body['action']         ?? '';
+
+if (!in_array($action, ['', 'delete'], true)) {
+    echo json_encode(['ok' => false, 'msg' => 'Action không hợp lệ']); exit;
+}
 
 if (!$userId || !$date) {
     echo json_encode(['ok' => false, 'msg' => 'Thiếu thông tin']); exit;
@@ -107,9 +113,35 @@ $checkOutFull = $checkOut ? $date . ' ' . $checkOut . ':00' : null;
 
 try {
     // Kiểm tra có bản ghi chưa
-    $exists = $pdo->prepare("SELECT id FROM attendance_logs WHERE user_id=? AND work_date=?");
+    $exists = $pdo->prepare("
+        SELECT id, user_id, work_date, check_in, check_out, work_hours,
+               is_late, late_minutes, early_leave, early_leave_minutes, note, source
+        FROM attendance_logs
+        WHERE user_id = ? AND work_date = ?
+    ");
     $exists->execute([$userId, $date]);
-    $existing = $exists->fetch(PDO::FETCH_ASSOC);
+    $existing = $exists->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if ($action === 'delete') {
+        if ($existing) {
+            $pdo->prepare("DELETE FROM attendance_logs WHERE id = ?")->execute([$existing['id']]);
+            auditLog(
+                $pdo,
+                'delete_attendance',
+                'attendance',
+                'danger',
+                "Xoá bản ghi chấm công user_id=$userId ngày $date",
+                [
+                    'target_id'    => $userId,
+                    'target_label' => "user_id=$userId",
+                    'old_value'    => $existing,
+                    'new_value'    => null,
+                ]
+            );
+        }
+        echo json_encode(['ok' => true, 'msg' => 'Đã xóa bản ghi chấm công']);
+        exit;
+    }
 
     if ($existing) {
         // Cập nhật
@@ -131,7 +163,7 @@ try {
             $isLate, $lateMinutes, $earlyLeave, $earlyMinutes,
             $note, $userId, $date
         ]);
-        $logId = $existing['id'];
+        $logId = (int)$existing['id'];
     } else {
         // Tạo mới
         $ins = $pdo->prepare("
@@ -145,7 +177,7 @@ try {
             $userId, $date, $checkInFull, $checkOutFull, $workHours,
             $isLate, $lateMinutes, $earlyLeave, $earlyMinutes, $note
         ]);
-        $logId = $pdo->lastInsertId();
+        $logId = (int)$pdo->lastInsertId();
     }
 
     // Ghi audit log
@@ -154,6 +186,19 @@ try {
             (attendance_log_id, changed_by, change_type, old_check_in, old_check_out, new_check_in, new_check_out, note, created_at)
         VALUES (?, ?, 'manual_edit', NULL, NULL, ?, ?, ?, NOW())
     ")->execute([$logId, currentUser()['id'], $checkInFull, $checkOutFull, $note]);
+
+    auditLog(
+        $pdo,
+        'manual_edit_attendance',
+        'attendance',
+        'warning',
+        "Sửa chấm công: user_id=$userId ngày $date",
+        [
+            'target_id' => $userId,
+            'old_value' => $existing,
+            'new_value' => ['check_in' => $checkInFull, 'check_out' => $checkOutFull, 'note' => $note],
+        ]
+    );
 
     echo json_encode([
         'ok'           => true,

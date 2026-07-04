@@ -2,6 +2,7 @@
 require_once 'config/database.php';
 require_once 'config/auth.php';
 require_once 'config/functions.php';
+require_once 'config/audit.php';
 
 if (isLoggedIn()) {
     header('Location: /erp/dashboard.php');
@@ -11,6 +12,7 @@ if (isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $pdo = getDBConnection();
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
         $error = 'Yêu cầu không hợp lệ. Vui lòng thử lại.';
     } else {
@@ -19,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($username) || empty($password)) {
             $error = 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.';
+            auditLog($pdo, 'login_failed', 'auth', 'danger', "Đăng nhập thất bại: username=$username", ['target_label' => $username]);
         } else {
-            $pdo  = getDBConnection();
             // FIX: tìm theo username HOẶC employee_code
             $stmt = $pdo->prepare("
                 SELECT u.id, u.employee_code, u.full_name, u.username,
@@ -49,12 +51,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $redirect = (str_starts_with($redirectRaw, '/erp/') && !str_contains($redirectRaw, '//'))
                     ? $redirectRaw
                     : ($user['role'] === 'employee' ? '/erp/mobile/index.php' : '/erp/dashboard.php');
+                auditLog(
+                    $pdo,
+                    'login_success',
+                    'auth',
+                    'success',
+                    "Đăng nhập thành công: {$user['full_name']} ({$user['role']})",
+                    ['target_id' => $user['id'], 'target_label' => $user['full_name']]
+                );
                 header("Location: " . $redirect);
                 exit();
             } elseif ($user && !$user['is_active']) {
                 $error = 'Tài khoản của bạn đã bị khóa. Liên hệ quản trị viên.';
+                auditLog($pdo, 'login_failed', 'auth', 'danger', "Đăng nhập thất bại: username=$username", ['target_label' => $username]);
             } else {
                 $error = 'Tên đăng nhập hoặc mật khẩu không đúng.';
+                auditLog($pdo, 'login_failed', 'auth', 'danger', "Đăng nhập thất bại: username=$username", ['target_label' => $username]);
             }
         }
     }

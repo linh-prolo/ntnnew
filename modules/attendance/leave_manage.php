@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 requireRole('production', 'manager', 'director', 'accountant');
 
 $user = currentUser();
@@ -24,6 +25,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $msg = $action==='approved' ? '✅ Đơn xin nghỉ phép của bạn đã được duyệt.' : '❌ Đơn xin nghỉ phép bị từ chối: '.$reason;
         $notif = $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Kết quả đơn nghỉ phép', ?, 'leave_request', ?)");
         $notif->execute([$lr['user_id'], $msg, $id]);
+        if ($action === 'approved') {
+            auditLog($pdo, 'approve_leave', 'attendance', 'success', "Duyệt đơn nghỉ phép #$id", ['target_id' => $id]);
+        } else {
+            auditLog($pdo, 'reject_leave', 'attendance', 'warning', "Từ chối đơn nghỉ phép #$id: $reason", ['target_id' => $id]);
+        }
         setFlash('success', 'Đã xử lý đơn nghỉ phép.');
     }
     header('Location: /erp/modules/attendance/leave_manage.php');

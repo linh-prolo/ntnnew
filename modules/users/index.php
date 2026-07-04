@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 
 // Chỉ Giám đốc & Kế toán được vào
 requireRole('director', 'accountant');
@@ -17,15 +18,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     // Không được khoá chính mình
     if ($target_id && $target_id !== $user['id']) {
         if ($action === 'lock') {
-            $pdo->prepare("UPDATE users SET is_active = 0 WHERE id = ?")->execute([$target_id]);
+            $stmt = $pdo->prepare("UPDATE users SET is_active = 0 WHERE id = ?");
+            $stmt->execute([$target_id]);
+            if ($stmt->rowCount()) {
+                auditLog($pdo, 'lock_user', 'users', 'warning', "Khoá tài khoản user_id=$target_id", ['target_id' => $target_id]);
+            }
             setFlash('warning', 'Đã khoá tài khoản.');
         } elseif ($action === 'unlock') {
-            $pdo->prepare("UPDATE users SET is_active = 1 WHERE id = ?")->execute([$target_id]);
+            $stmt = $pdo->prepare("UPDATE users SET is_active = 1 WHERE id = ?");
+            $stmt->execute([$target_id]);
+            if ($stmt->rowCount()) {
+                auditLog($pdo, 'unlock_user', 'users', 'success', "Mở khoá tài khoản user_id=$target_id", ['target_id' => $target_id]);
+            }
             setFlash('success', 'Đã mở khoá tài khoản.');
         } elseif ($action === 'delete') {
             // Chỉ Giám đốc mới được xoá
             if (hasRole('director')) {
-                $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$target_id]);
+                $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+                $stmt->execute([$target_id]);
+                if ($stmt->rowCount()) {
+                    auditLog($pdo, 'delete_user', 'users', 'danger', "Xoá tài khoản user_id=$target_id", ['target_id' => $target_id]);
+                }
                 setFlash('success', 'Đã xoá tài khoản.');
             } else {
                 setFlash('danger', 'Bạn không có quyền xoá tài khoản.');

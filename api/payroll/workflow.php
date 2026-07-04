@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 header('Content-Type: application/json');
 requireLogin();
 
@@ -41,6 +42,7 @@ switch ($action) {
         }
         $pdo->prepare("UPDATE payroll_periods SET status='submitted', submitted_at=NOW(), submitted_by=? WHERE id=?")
             ->execute([$user['id'], $periodId]);
+        auditLog($pdo, 'submit_payroll', 'payroll', 'success', "Trình duyệt bảng lương kỳ #$periodId", ['target_id' => $periodId]);
         echo json_encode(['ok' => true, 'msg' => '📤 Đã trình Giám đốc duyệt!', 'status' => 'submitted']);
         break;
 
@@ -53,6 +55,7 @@ switch ($action) {
         }
         $pdo->prepare("UPDATE payroll_periods SET status='approved', approved_at=NOW(), approved_by=? WHERE id=?")
             ->execute([$user['id'], $periodId]);
+        auditLog($pdo, 'approve_payroll', 'payroll', 'success', "Duyệt bảng lương kỳ #$periodId", ['target_id' => $periodId]);
         echo json_encode(['ok' => true, 'msg' => '✅ Đã duyệt! Nhân viên có thể xem phiếu lương.', 'status' => 'approved']);
         break;
 
@@ -65,6 +68,7 @@ switch ($action) {
         }
         $pdo->prepare("UPDATE payroll_periods SET status='locked', locked_at=NOW(), locked_by=? WHERE id=?")
             ->execute([$user['id'], $periodId]);
+        auditLog($pdo, 'lock_payroll', 'payroll', 'warning', "Lock bảng lương kỳ #$periodId", ['target_id' => $periodId]);
         echo json_encode(['ok' => true, 'msg' => '🔒 Đã lock kỳ lương!', 'status' => 'locked']);
         break;
 

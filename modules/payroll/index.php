@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 requireRole('director', 'accountant');
 
 $pdo  = getDBConnection();
@@ -94,10 +95,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     }
 
     // Xoá phiếu lương trước, sau đó xoá kỳ lương
-    $pdo->prepare("DELETE FROM payroll_slips WHERE period_id = ?")->execute([$period_id]);
-    $pdo->prepare("DELETE FROM payroll_periods WHERE id = ?")->execute([$period_id]);
-
-    setFlash('success', "🗑️ Đã xoá kỳ lương Tháng {$period['period_month']}/{$period['period_year']} và toàn bộ phiếu lương liên quan.");
+    try {
+        $pdo->beginTransaction();
+        $delSlips = $pdo->prepare("DELETE FROM payroll_slips WHERE period_id = ?");
+        $delSlips->execute([$period_id]);
+        $delPeriod = $pdo->prepare("DELETE FROM payroll_periods WHERE id = ?");
+        $delPeriod->execute([$period_id]);
+        if ($delPeriod->rowCount() < 1) {
+            throw new RuntimeException('Xóa kỳ lương thất bại');
+        }
+        $pdo->commit();
+        auditLog(
+            $pdo,
+            'delete_payslip',
+            'payroll',
+            'danger',
+            "Xoá phiếu lương kỳ #$period_id",
+            ['target_id' => $period_id, 'target_label' => "period {$period['period_month']}/{$period['period_year']}"]
+        );
+        setFlash('success', "🗑️ Đã xoá kỳ lương Tháng {$period['period_month']}/{$period['period_year']} và toàn bộ phiếu lương liên quan.");
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        setFlash('danger', 'Không thể xoá kỳ lương. Vui lòng thử lại.');
+    }
     header('Location: /erp/modules/payroll/index.php'); exit;
 }
 

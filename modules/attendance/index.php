@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 requireLogin();
 
 $user = currentUser();
@@ -109,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     };
 
     if ($action === 'check_in') {
+        $didCheckIn = false;
         $existStmt = $pdo->prepare("SELECT id, check_in FROM attendance_logs WHERE user_id = ? AND work_date = ?");
         $existStmt->execute([$user['id'], $today]);
         $existing = $existStmt->fetch(PDO::FETCH_ASSOC);
@@ -122,23 +124,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                             device_id = ?, same_device_alert = ?
                         WHERE id = ?")
                         ->execute([$now, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $existing['id']]);
+                    $didCheckIn = true;
                 }
             } else {
                 $pdo->prepare("INSERT INTO attendance_logs
                     (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert)
                     VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?)")
                     ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert]);
+                $didCheckIn = true;
             }
         } catch (Throwable $e) {
             error_log('check_in with location failed: ' . $e->getMessage());
             try {
                 if ($existing) {
-                    if (!$existing['check_in'])
+                    if (!$existing['check_in']) {
                         $pdo->prepare("UPDATE attendance_logs SET check_in = ?, source = 'manual' WHERE id = ?")
                             ->execute([$now, $existing['id']]);
+                        $didCheckIn = true;
+                    }
                 } else {
                     $pdo->prepare("INSERT INTO attendance_logs (user_id, check_in, work_date, source) VALUES (?, ?, ?, 'manual')")
                         ->execute([$user['id'], $now, $today]);
+                    $didCheckIn = true;
                 }
             } catch (Throwable $e2) {
                 error_log('check_in fallback failed: ' . $e2->getMessage());
@@ -181,8 +188,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         }
 
         setFlash('success', 'Chấm công vào ca thành công lúc ' . date('H:i') . $flagMsg);
+        if ($didCheckIn) {
+            auditLog(
+                $pdo,
+                'check_in',
+                'attendance',
+                'success',
+                "Chấm công VÀO: {$user['full_name']} lúc " . date('H:i'),
+                ['target_id' => $user['id'], 'target_label' => $user['full_name']]
+            );
+        }
 
     } elseif ($action === 'check_out') {
+        $didCheckOut = false;
         // Tìm bản ghi check_in chưa có check_out trong hôm nay hoặc hôm qua (cho ca đêm qua ngày)
         $openLog = $pdo->prepare("
             SELECT id FROM attendance_logs
@@ -205,13 +223,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                         check_out_ip = ?, check_out_lat = ?, check_out_lng = ?, check_out_location_flag = ?
                     WHERE id = ? AND check_out IS NULL")
                     ->execute([$now, $now, $ip, $lat, $lng, $locationFlag, $openLogId]);
+                $didCheckOut = true;
             } catch (Throwable $e) {
                 error_log('check_out with location failed: ' . $e->getMessage());
                 $pdo->prepare("UPDATE attendance_logs SET check_out = ?, work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2) WHERE id = ? AND check_out IS NULL")
                     ->execute([$now, $now, $openLogId]);
+                $didCheckOut = true;
             }
         }
         setFlash('success', 'Chấm công ra ca thành công lúc ' . date('H:i') . $flagMsg);
+        if ($didCheckOut) {
+            auditLog(
+                $pdo,
+                'check_out',
+                'attendance',
+                'success',
+                "Chấm công RA: {$user['full_name']} lúc " . date('H:i'),
+                ['target_id' => $user['id'], 'target_label' => $user['full_name']]
+            );
+        }
     }
     header('Location: /erp/modules/attendance/index.php');
     exit();

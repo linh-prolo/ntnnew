@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS system_audit_logs (
+    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id       INT UNSIGNED NULL DEFAULT NULL COMMENT 'NULL nếu chưa đăng nhập',
+    username      VARCHAR(100) NULL DEFAULT NULL COMMENT 'Snapshot tên đăng nhập lúc thao tác',
+    full_name     VARCHAR(200) NULL DEFAULT NULL COMMENT 'Snapshot họ tên',
+    role          VARCHAR(50)  NULL DEFAULT NULL COMMENT 'Snapshot role',
+    action        VARCHAR(100) NOT NULL COMMENT 'Tên hành động: create_user, delete_invoice, check_in...',
+    module        VARCHAR(100) NOT NULL COMMENT 'Module: users, attendance, payroll, invoice...',
+    target_id     INT UNSIGNED NULL DEFAULT NULL COMMENT 'ID bản ghi bị tác động',
+    target_label  VARCHAR(255) NULL DEFAULT NULL COMMENT 'Mô tả bản ghi: tên NV, số hóa đơn...',
+    level         ENUM('success','warning','danger') NOT NULL DEFAULT 'success',
+    description   TEXT NULL COMMENT 'Mô tả chi tiết thao tác',
+    old_value     TEXT NULL COMMENT 'JSON giá trị trước khi thay đổi (chỉ khi edit/delete)',
+    new_value     TEXT NULL COMMENT 'JSON giá trị sau khi thay đổi',
+    ip_address    VARCHAR(45) NULL DEFAULT NULL,
+    user_agent    VARCHAR(500) NULL DEFAULT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_sal_user     (user_id),
+    INDEX idx_sal_module   (module),
+    INDEX idx_sal_level    (level),
+    INDEX idx_sal_created  (created_at),
+    INDEX idx_sal_action   (action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='System audit log - lịch sử toàn bộ thao tác';

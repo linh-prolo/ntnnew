@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 requireRole('director', 'accountant');
 
 $pdo    = getDBConnection();
@@ -34,8 +35,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     }
 
     if (empty($errors)) {
-        $pdo->prepare("UPDATE users SET full_name=?, email=?, phone=?, role_id=?, department_id=?, employee_code=? WHERE id=?")
-            ->execute([$full_name, $email, $phone, $role_id, $dept_id, $employee_code, $id]);
+        $stmt = $pdo->prepare("UPDATE users SET full_name=?, email=?, phone=?, role_id=?, department_id=?, employee_code=? WHERE id=?");
+        $stmt->execute([$full_name, $email, $phone, $role_id, $dept_id, $employee_code, $id]);
+        if ($stmt->rowCount()) {
+            auditLog(
+                $pdo,
+                'edit_user',
+                'users',
+                'warning',
+                "Sửa thông tin: $full_name",
+                [
+                    'target_id'    => $id,
+                    'target_label' => $full_name,
+                    'old_value'    => [
+                        'full_name'     => $editUser['full_name'] ?? null,
+                        'email'         => $editUser['email'] ?? null,
+                        'phone'         => $editUser['phone'] ?? null,
+                        'role_id'       => $editUser['role_id'] ?? null,
+                        'department_id' => $editUser['department_id'] ?? null,
+                        'employee_code' => $editUser['employee_code'] ?? null,
+                    ],
+                    'new_value'    => [
+                        'full_name'     => $full_name,
+                        'email'         => $email,
+                        'phone'         => $phone,
+                        'role_id'       => $role_id,
+                        'department_id' => $dept_id,
+                        'employee_code' => $employee_code,
+                    ],
+                ]
+            );
+        }
         setFlash('success', 'Cập nhật tài khoản thành công!');
         header('Location: /erp/modules/users/index.php');
         exit();

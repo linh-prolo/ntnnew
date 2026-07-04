@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 
 requireRole('production', 'manager', 'director', 'accountant');
 
@@ -34,8 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                     ' (' . $otData['start_time'] . '–' . $otData['end_time'] . ', ' . $otData['hours'] . ' giờ) đã được duyệt bởi ' . $user['full_name'],
                     $ot_id
                 ]);
-            setFlash('success', '✅ Đã duyệt đơn OT.');
-        }
+            auditLog($pdo, 'approve_ot', 'attendance', 'success', "Duyệt đơn OT #$ot_id", ['target_id' => $ot_id]);
+            setFlash('success', '✅ Đã duyệt đơn OT.');
+        }
         header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
         exit();
     }
@@ -62,8 +64,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                         'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' bị từ chối. Lý do: ' . $reject_reason,
                         $ot_id
                     ]);
-                setFlash('warning', '⚠️ Đã từ chối đơn OT.');
-            }
+                auditLog($pdo, 'reject_ot', 'attendance', 'warning', "Từ chối đơn OT #$ot_id", ['target_id' => $ot_id]);
+                setFlash('warning', '⚠️ Đã từ chối đơn OT.');
+            }
         }
         header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
         exit();
@@ -92,8 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                             'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' (' . $otData['hours'] . ' giờ) đã được duyệt.',
                             $id
                         ]);
-                }
-            }
+                    auditLog($pdo, 'approve_ot', 'attendance', 'success', "Duyệt đơn OT #$id", ['target_id' => $id]);
+                }
+            }
             setFlash('success', "✅ Đã duyệt <strong>$count</strong> đơn OT.");
         }
         header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
@@ -126,8 +130,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                             'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' bị từ chối. Lý do: ' . $bulk_reason,
                             $id
                         ]);
-                }
-            }
+                    auditLog($pdo, 'reject_ot', 'attendance', 'warning', "Từ chối đơn OT #$id", ['target_id' => $id]);
+                }
+            }
             setFlash('warning', "⚠️ Đã từ chối <strong>$count</strong> đơn OT.");
         }
         header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
@@ -142,8 +147,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             $stmt = $pdo->prepare("DELETE FROM overtime_requests WHERE id = ?");
             $stmt->execute([$ot_id]);
             if ($stmt->rowCount()) {
-                setFlash('success', '🗑️ Đã xóa đơn OT.');
-            }
+                auditLog($pdo, 'delete_ot', 'attendance', 'danger', "Xoá đơn OT #$ot_id", ['target_id' => $ot_id]);
+                setFlash('success', '🗑️ Đã xóa đơn OT.');
+            }
         }
         header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
         exit();

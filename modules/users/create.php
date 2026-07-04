@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/audit.php';
 requireRole('director', 'accountant');
 
 $pdo    = getDBConnection();
@@ -47,6 +48,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
         ");
         $stmt->execute([$employee_code, $full_name, $username, $hash, $email, $phone, $role_id, $dept_id]);
+        $newUserId = (int)$pdo->lastInsertId();
+        auditLog(
+            $pdo,
+            'create_user',
+            'users',
+            'success',
+            "Tạo tài khoản mới: $full_name ($employee_code)",
+            ['target_id' => $newUserId, 'target_label' => $full_name]
+        );
 
         setFlash('success', "✅ Tạo tài khoản <strong>" . htmlspecialchars($full_name) . "</strong> thành công! Đăng nhập bằng mã <code>$employee_code</code>");
         header('Location: /erp/modules/users/index.php');
