@@ -179,10 +179,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 $isSun = $dow == 7;
                                 $isSat = $dow == 6;
                             ?>
-                            <th class="text-center px-1 <?= $isSun?'text-danger':($isSat?'text-warning':'') ?> <?= $isToday?'bg-primary text-white':'' ?>"
-                                style="min-width:36px; font-size:11px;">
-                                <div><?= ['','T2','T3','T4','T5','T6','T7','CN'][$dow] ?></div>
-                                <div class="<?= $isToday?'':'text-muted' ?>"><?= $d ?></div>
+                            <th class="text-center px-0 <?= $isSun?'text-danger':($isSat?'text-warning':'') ?> <?= $isToday?'bg-primary text-white':'' ?>"
+                                style="min-width:38px; font-size:11px; line-height:1.3;">
+                                <div class="fw-bold"><?= str_pad($d, 2, '0', STR_PAD_LEFT) ?></div>
+                                <div style="font-size:10px; opacity:0.85;"><?= ['','T2','T3','T4','T5','T6','T7','CN'][$dow] ?></div>
                             </th>
                             <?php endfor; ?>
                             <th class="text-center" style="min-width:60px;">Ngày công</th>
