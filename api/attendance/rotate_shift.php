@@ -35,8 +35,13 @@ if (!$emp) {
 // Kiểm tra 2 ca tồn tại
 $shiftCheck = $pdo->prepare("SELECT id, shift_name FROM work_shifts WHERE id IN (?, ?) AND is_active = 1");
 $shiftCheck->execute([$shift1Id, $shift2Id]);
-if ($shiftCheck->rowCount() < 2) {
+$shiftRows = $shiftCheck->fetchAll(PDO::FETCH_ASSOC);
+if (count($shiftRows) < 2) {
     echo json_encode(['ok' => false, 'msg' => 'Một hoặc cả 2 ca không hợp lệ hoặc chưa được kích hoạt']); exit;
+}
+$shiftMap = [];
+foreach ($shiftRows as $row) {
+    $shiftMap[(int)$row['id']] = $row['shift_name'];
 }
 
 // Tính ngày đầu, giữa, cuối tháng
@@ -72,7 +77,20 @@ try {
 
     echo json_encode([
         'ok'  => true,
-        'msg' => "Đã phân ca luân phiên cho {$emp['full_name']}: ca 1 từ $firstDay đến $midDay, ca 2 từ $midDayPlus1 đến $lastDay"
+        'msg' => "Đã phân ca luân phiên cho {$emp['full_name']}",
+        'employee_name' => $emp['full_name'],
+        'detail' => [
+            [
+                'from'  => date('d/m/Y', strtotime($firstDay)),
+                'to'    => date('d/m/Y', strtotime($midDay)),
+                'shift' => $shiftMap[$shift1Id] ?? 'Ca 1'
+            ],
+            [
+                'from'  => date('d/m/Y', strtotime($midDayPlus1)),
+                'to'    => date('d/m/Y', strtotime($lastDay)),
+                'shift' => $shiftMap[$shift2Id] ?? 'Ca 2'
+            ]
+        ]
     ]);
 } catch (Exception $e) {
     $pdo->rollBack();
