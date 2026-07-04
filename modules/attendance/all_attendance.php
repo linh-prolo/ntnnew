@@ -804,6 +804,18 @@ async function showDayDetail(userId, dateStr, empName) {
                         <tr><th>IP ra</th><td><code class="small">${data.att?.check_out_ip ? escapeHtml(data.att.check_out_ip) : '—'}</code></td></tr>
                         ${hasValidLocation(data.att?.check_out_lat, data.att?.check_out_lng) ? `<tr><th>Tọa độ ra</th><td>${buildLocationLink(data.att.check_out_lat, data.att.check_out_lng)}</td></tr>` : ''}
                     </table>
+                    <div class="row g-2 mt-2">
+                        ${data.att?.check_in_photo ? `<div class="col-6 text-center">
+                            <div class="small text-muted mb-1">📸 Ảnh vào</div>
+                            <img src="${escapeHtml(data.att.check_in_photo)}" class="img-fluid rounded" style="max-height:180px; border:2px solid #28a745;" onerror="this.style.display='none'">
+                        </div>` : `<div class="col-6 text-center text-muted small d-flex align-items-center justify-content-center"
+                            style="height:100px; background:#f8f9fa; border-radius:8px;">Không có ảnh vào</div>`}
+                        ${data.att?.check_out_photo ? `<div class="col-6 text-center">
+                            <div class="small text-muted mb-1">📸 Ảnh ra</div>
+                            <img src="${escapeHtml(data.att.check_out_photo)}" class="img-fluid rounded" style="max-height:180px; border:2px solid #dc3545;" onerror="this.style.display='none'">
+                        </div>` : `<div class="col-6 text-center text-muted small d-flex align-items-center justify-content-center"
+                            style="height:100px; background:#f8f9fa; border-radius:8px;">Không có ảnh ra</div>`}
+                    </div>
                 </div>
             </div>
         </div>`;

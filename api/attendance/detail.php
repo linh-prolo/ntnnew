@@ -24,6 +24,8 @@ if ($attData) {
         'check_out_lat' => null,
         'check_out_lng' => null,
         'check_out_location_flag' => 'unknown',
+        'check_in_photo' => null,
+        'check_out_photo' => null,
     ];
 }
 

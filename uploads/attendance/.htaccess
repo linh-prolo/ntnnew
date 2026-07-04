@@ -1,0 +1,9 @@
+Options -Indexes
+
+<FilesMatch "\.(jpg|jpeg)$">
+    Require all granted
+</FilesMatch>
+
+<FilesMatch "\.(php|phtml|php[0-9]?|phar|cgi|pl|py|sh)$">
+    Require all denied
+</FilesMatch>

@@ -10,6 +10,11 @@ $pdo = getDBConnection();
 // Xử lý form chấm công thủ công
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? '')) {
     $action = $_POST['action'] ?? '';
+    if (!in_array($action, ['check_in', 'check_out'], true)) {
+        setFlash('danger', 'Yêu cầu chấm công không hợp lệ.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
     $today  = date('Y-m-d');
     $now    = date('Y-m-d H:i:s');
 
@@ -83,6 +88,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         }
     }
 
+    // ── Xử lý ảnh chụp ────────────────────────────────────────────────────
+    $photoData = trim($_POST['photo_data'] ?? '');
+    $photoPath = null;
+    $photoPrefix = 'data:image/jpeg;base64,';
+    // Giới hạn đầu vào gốc lớn hơn file nén để tránh payload base64 quá lớn.
+    $minPhotoBytes = 1000;
+    $maxPhotoBytes = 800000;
+    $maxCompressedPhotoBytes = 300000;
+
+    if ($photoData === '' || !str_starts_with($photoData, $photoPrefix)) {
+        setFlash('danger', '📸 Không thể chấm công: Vui lòng chụp ảnh xác nhận trước khi chấm công.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    $base64 = substr($photoData, strlen($photoPrefix));
+    $imgBinary = base64_decode($base64, true);
+    if ($imgBinary === false || strlen($imgBinary) < $minPhotoBytes || strlen($imgBinary) > $maxPhotoBytes) {
+        setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng thử lại.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    $imgInfo = @getimagesizefromstring($imgBinary);
+    if ($imgInfo === false || ($imgInfo['mime'] ?? '') !== 'image/jpeg') {
+        setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng thử lại.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    if (!function_exists('imagecreatefromstring') || !function_exists('imagejpeg')) {
+        setFlash('danger', '📸 Máy chủ chưa hỗ trợ xử lý ảnh chấm công. Liên hệ quản trị viên.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    $image = @imagecreatefromstring($imgBinary);
+    if ($image === false) {
+        setFlash('danger', '📸 Không thể xử lý ảnh chụp. Vui lòng thử lại.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    ob_start();
+    imagejpeg($image, null, 80);
+    $compressedBinary = ob_get_clean();
+    imagedestroy($image);
+    if ($compressedBinary === false) {
+        setFlash('danger', '📸 Không thể xử lý ảnh chụp. Vui lòng thử lại.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    if ($compressedBinary === '' || strlen($compressedBinary) < $minPhotoBytes || strlen($compressedBinary) > $maxCompressedPhotoBytes) {
+        setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng chụp lại gần khuôn mặt hơn.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    $uploadDate = date('Y-m-d');
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/erp/uploads/attendance/' . $uploadDate . '/';
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0750, true) && !is_dir($uploadDir)) {
+        setFlash('danger', '📸 Không thể tạo thư mục lưu ảnh. Liên hệ quản trị viên.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
+    $actionFileTag = $action === 'check_in' ? 'in' : 'out';
+    $filename = $user['id'] . '_' . $actionFileTag . '_' . date('Ymd_His') . '.jpg';
+    $fullPath = $uploadDir . $filename;
+    $photoPath = '/erp/uploads/attendance/' . $uploadDate . '/' . $filename;
+    if (file_put_contents($fullPath, $compressedBinary) === false) {
+        setFlash('danger', '📸 Không thể lưu ảnh. Liên hệ quản trị viên.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
+
     // Tính location flag
     $locationFlag = 'unknown';
     try {
@@ -119,15 +201,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                     $pdo->prepare("UPDATE attendance_logs
                         SET check_in = ?, source = 'manual',
                             check_in_ip = ?, check_in_lat = ?, check_in_lng = ?, check_in_location_flag = ?,
-                            device_id = ?, same_device_alert = ?
+                            device_id = ?, same_device_alert = ?, check_in_photo = ?
                         WHERE id = ?")
-                        ->execute([$now, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $existing['id']]);
+                        ->execute([$now, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath, $existing['id']]);
                 }
             } else {
                 $pdo->prepare("INSERT INTO attendance_logs
-                    (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert)
-                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?)")
-                    ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert]);
+                    (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert, check_in_photo)
+                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath]);
             }
         } catch (Throwable $e) {
             error_log('check_in with location failed: ' . $e->getMessage());
@@ -202,9 +284,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                 $pdo->prepare("UPDATE attendance_logs
                     SET check_out = ?,
                         work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2),
-                        check_out_ip = ?, check_out_lat = ?, check_out_lng = ?, check_out_location_flag = ?
+                        check_out_ip = ?, check_out_lat = ?, check_out_lng = ?, check_out_location_flag = ?, check_out_photo = ?
                     WHERE id = ? AND check_out IS NULL")
-                    ->execute([$now, $now, $ip, $lat, $lng, $locationFlag, $openLogId]);
+                    ->execute([$now, $now, $ip, $lat, $lng, $locationFlag, $photoPath, $openLogId]);
             } catch (Throwable $e) {
                 error_log('check_out with location failed: ' . $e->getMessage());
                 $pdo->prepare("UPDATE attendance_logs SET check_out = ?, work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2) WHERE id = ? AND check_out IS NULL")
@@ -326,6 +408,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <input type="hidden" name="lat" id="inputLat" value="">
                             <input type="hidden" name="lng" id="inputLng" value="">
                             <input type="hidden" name="device_id" id="inputDeviceId" value="">
+                            <input type="hidden" name="photo_data" id="inputPhotoData" value="">
+
+                            <?php if ($canCheckIn): ?>
+                                <input type="hidden" name="action" value="check_in">
+                            <?php elseif ($canCheckOut): ?>
+                                <input type="hidden" name="action" value="check_out">
+                            <?php endif; ?>
 
                             <!-- Trạng thái GPS -->
                             <div id="gpsStatus" class="alert alert-warning py-2 small mb-2">
@@ -333,31 +422,44 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <span id="gpsStatusText">Đang lấy vị trí GPS, vui lòng chờ...</span>
                             </div>
 
+                            <div id="cameraError" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
+
                             <div class="text-muted small mb-3">
                                 <i class="fas fa-network-wired me-1"></i>
                                 IP của bạn: <code id="displayIp">—</code>
                             </div>
 
-                            <?php if ($canCheckIn): ?>
-                                <input type="hidden" name="action" value="check_in">
-                                <button type="submit" class="btn btn-success btn-lg w-100 mb-2"
-                                        id="btnSubmit"
-                                        disabled
-                                        onclick="return confirm('Xác nhận chấm công VÀO lúc ' + new Date().toLocaleTimeString('vi-VN') + '?')">
-                                    <i class="fas fa-sign-in-alt me-2"></i>Chấm công VÀO
-                                </button>
-                            <?php elseif ($canCheckOut): ?>
-                                <input type="hidden" name="action" value="check_out">
-                                <div class="alert alert-info py-2 small mb-2">
-                                    Đã vào: <?= date('H:i', strtotime($todayLog['check_in'])) ?>
+                            <div id="cameraSection" class="mb-3">
+                                <div class="border rounded p-2 bg-light">
+                                    <video id="cameraVideo" aria-label="Camera preview for attendance photo" class="w-100 rounded" autoplay playsinline muted style="max-height:280px;background:#000;"></video>
                                 </div>
-                                <button type="submit" class="btn btn-danger btn-lg w-100"
-                                        id="btnSubmit"
-                                        disabled
-                                        onclick="return confirm('Xác nhận chấm công RA lúc ' + new Date().toLocaleTimeString('vi-VN') + '?')">
-                                    <i class="fas fa-sign-out-alt me-2"></i>Chấm công RA
+                                <button type="button" class="btn btn-outline-primary w-100 mt-2" id="btnCapture" disabled>
+                                    📸 Chụp ảnh khuôn mặt
                                 </button>
-                            <?php endif; ?>
+                            </div>
+
+                            <div id="previewSection" style="display:none;">
+                                <div class="border rounded p-2 bg-light mb-2 text-center">
+                                    <img id="photoPreview" class="img-fluid rounded" alt="Ảnh đã chụp" style="max-height:280px;">
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button type="button" class="btn btn-outline-secondary" id="btnRetake">🔄 Chụp lại</button>
+                                    <?php if ($canCheckIn): ?>
+                                    <button type="button" class="btn btn-success btn-lg" id="btnConfirmPhoto" disabled>
+                                        <i class="fas fa-sign-in-alt me-2"></i>Xác nhận chấm công VÀO
+                                    </button>
+                                    <?php elseif ($canCheckOut): ?>
+                                    <div class="alert alert-info py-2 small mb-0">
+                                        Đã vào: <?= date('H:i', strtotime($todayLog['check_in'])) ?>
+                                    </div>
+                                    <button type="button" class="btn btn-danger btn-lg" id="btnConfirmPhoto" disabled>
+                                        <i class="fas fa-sign-out-alt me-2"></i>Xác nhận chấm công RA
+                                    </button>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <canvas id="photoCanvas" style="display:none;"></canvas>
                         </form>
                     <?php endif; ?>
                 </div>
@@ -523,8 +625,23 @@ const gpsStatusEl = document.getElementById('gpsStatus');
 const gpsTextEl   = document.getElementById('gpsStatusText');
 const inputLat    = document.getElementById('inputLat');
 const inputLng    = document.getElementById('inputLng');
-const btnSubmit   = document.getElementById('btnSubmit');
+const formEl      = document.getElementById('attendanceForm');
+const inputPhotoData = document.getElementById('inputPhotoData');
+const btnCapture = document.getElementById('btnCapture');
+const btnRetake = document.getElementById('btnRetake');
+const btnConfirmPhoto = document.getElementById('btnConfirmPhoto');
+const cameraVideo = document.getElementById('cameraVideo');
+const photoCanvas = document.getElementById('photoCanvas');
+const photoPreview = document.getElementById('photoPreview');
+const cameraSection = document.getElementById('cameraSection');
+const previewSection = document.getElementById('previewSection');
+const cameraError = document.getElementById('cameraError');
 const displayIpEl = document.getElementById('displayIp');
+let gpsReady = false;
+let photoReady = false;
+let stream = null;
+const MAX_PHOTO_BYTES = 300000;
+const PHOTO_DATA_PREFIX = 'data:image/jpeg;base64,';
 
 // Hiện IP
 if (displayIpEl) {
@@ -534,16 +651,113 @@ if (displayIpEl) {
         .catch(() => { displayIpEl.textContent = 'N/A'; });
 }
 
-// GPS bắt buộc — nút chỉ được kích hoạt khi có tọa độ
-if (btnSubmit && gpsStatusEl && gpsTextEl && inputLat && inputLng) {
+function checkReadyToSubmit() {
+    if (btnConfirmPhoto) {
+        btnConfirmPhoto.disabled = !(gpsReady && photoReady);
+    }
+}
+
+function showCameraError(message) {
+    if (cameraError) {
+        cameraError.style.display = '';
+        cameraError.innerHTML = `<i class="fas fa-times-circle me-1"></i>${message}`;
+    }
+    if (btnCapture) {
+        btnCapture.disabled = true;
+        btnCapture.title = 'Cần bật camera để chấm công';
+    }
+}
+
+async function startCamera() {
+    if (!cameraVideo || !btnCapture) return;
+
+    if (!window.isSecureContext && !['localhost', '127.0.0.1', '::1'].includes(location.hostname)) {
+        showCameraError('<strong>⚠️ Camera yêu cầu HTTPS.</strong> Vui lòng truy cập hệ thống qua HTTPS để chấm công.');
+        return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showCameraError('<strong>⚠️ Trình duyệt không hỗ trợ camera.</strong> Vui lòng dùng Chrome/Safari/Firefox mới nhất.');
+        return;
+    }
+
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: false
+        });
+        cameraVideo.srcObject = stream;
+        cameraVideo.onloadedmetadata = () => {
+            btnCapture.disabled = false;
+            btnCapture.title = '';
+        };
+    } catch (err) {
+        showCameraError(`<strong>⚠️ Không thể mở camera:</strong> ${err.message}<br><small>Vui lòng cho phép trình duyệt truy cập camera để chấm công.</small>`);
+    }
+}
+
+btnCapture?.addEventListener('click', () => {
+    if (!cameraVideo || !photoCanvas || !photoPreview || !inputPhotoData) return;
+    const context = photoCanvas.getContext('2d');
+    if (!context) return;
+
+    photoCanvas.width = cameraVideo.videoWidth || 640;
+    photoCanvas.height = cameraVideo.videoHeight || 480;
+    context.drawImage(cameraVideo, 0, 0, photoCanvas.width, photoCanvas.height);
+
+    const imgData = photoCanvas.toDataURL('image/jpeg', 0.8);
+    // Base64 quy đổi: 4 ký tự mã hóa tương ứng ~3 bytes dữ liệu nhị phân.
+    const approxBytes = Math.ceil((imgData.length - PHOTO_DATA_PREFIX.length) * 3 / 4);
+    if (approxBytes > MAX_PHOTO_BYTES) {
+        alert('Ảnh chụp quá lớn. Vui lòng chụp lại gần hơn.');
+        return;
+    }
+
+    photoPreview.src = imgData;
+    inputPhotoData.value = imgData;
+
+    cameraSection.style.display = 'none';
+    previewSection.style.display = '';
+    photoReady = true;
+    checkReadyToSubmit();
+});
+
+btnRetake?.addEventListener('click', () => {
+    if (previewSection) previewSection.style.display = 'none';
+    if (cameraSection) cameraSection.style.display = '';
+    if (inputPhotoData) inputPhotoData.value = '';
+    photoReady = false;
+    checkReadyToSubmit();
+});
+
+btnConfirmPhoto?.addEventListener('click', () => {
+    if (!photoReady || !gpsReady || !formEl) return;
+    const action = <?= json_encode($canCheckIn ? 'check_in' : 'check_out') ?>;
+    const actionText = action === 'check_in' ? 'VÀO' : 'RA';
+    if (!confirm(`Xác nhận chấm công ${actionText} lúc ${new Date().toLocaleTimeString('vi-VN')}?`)) return;
+
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+    formEl.submit();
+});
+
+formEl?.addEventListener('submit', (event) => {
+    if (!gpsReady || !photoReady || !inputPhotoData?.value) {
+        event.preventDefault();
+    }
+});
+
+// GPS bắt buộc — chỉ được xác nhận khi có tọa độ hợp lệ
+if (gpsStatusEl && gpsTextEl && inputLat && inputLng) {
     if (!navigator.geolocation) {
         // Browser không hỗ trợ GPS
         gpsStatusEl.className = 'alert alert-danger py-2 small mb-2';
         gpsTextEl.innerHTML = `<i class="fas fa-times-circle me-1"></i>
             <strong>Trình duyệt không hỗ trợ định vị.</strong>
             Vui lòng dùng Chrome / Firefox hoặc ứng dụng di động để chấm công.`;
-        btnSubmit.disabled = true;
-        btnSubmit.title = 'Cần bật GPS để chấm công';
+        gpsReady = false;
+        checkReadyToSubmit();
     } else {
         navigator.geolocation.getCurrentPosition(
             // ✅ Lấy GPS thành công
@@ -563,15 +777,16 @@ if (btnSubmit && gpsStatusEl && gpsTextEl && inputLat && inputLng) {
                         + ` &nbsp;<small class="opacity-75">GPS: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}</small>`;
 
                     if (!inRange) {
-                        btnSubmit.disabled = true;
-                        btnSubmit.title = 'Bạn đang ngoài phạm vi công ty';
+                        gpsReady = false;
                     } else {
-                        btnSubmit.disabled = false;
+                        gpsReady = true;
                     }
+                    checkReadyToSubmit();
                 } else {
                     gpsStatusEl.className = 'alert alert-success py-2 small mb-2';
                     gpsTextEl.innerHTML = `<i class="fas fa-check-circle me-1"></i>GPS: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)} (±${Math.round(pos.coords.accuracy)}m)`;
-                    btnSubmit.disabled = false;
+                    gpsReady = true;
+                    checkReadyToSubmit();
                 }
             },
             // ❌ Không lấy được GPS — khóa nút, hiện hướng dẫn
@@ -588,8 +803,8 @@ if (btnSubmit && gpsStatusEl && gpsTextEl && inputLat && inputLng) {
                         👉 Hãy <strong>bật định vị</strong> trên thiết bị và <strong>cho phép trình duyệt</strong>
                         truy cập vị trí, sau đó <a href="" class="alert-link">tải lại trang</a>.
                     </span>`;
-                btnSubmit.disabled = true;
-                btnSubmit.title = 'Cần bật GPS để chấm công';
+                gpsReady = false;
+                checkReadyToSubmit();
             },
             { timeout: 10000, enableHighAccuracy: true }
         );
@@ -619,6 +834,8 @@ getDeviceId().then(id => {
     const el = document.getElementById('inputDeviceId');
     if (el) el.value = id;
 }).catch(() => {});
+
+startCamera();
 </script>
 
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
