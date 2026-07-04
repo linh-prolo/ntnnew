@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         header('Location: /erp/modules/payroll/index.php'); exit;
     }
 
-    $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $m, $y);
+    $daysInMonth = (int) date('t', mktime(0, 0, 0, $m, 1, $y));
     $from        = sprintf('%04d-%02d-01', $y, $m);
     $to          = sprintf('%04d-%02d-%02d', $y, $m, $daysInMonth);
     $workingDays = calcWorkingDays($pdo, $from, $to);

@@ -14,7 +14,7 @@ $filterDept = (int)($_GET['dept'] ?? 0);
 if ($viewMonth < 1)  { $viewMonth = 12; $viewYear--; }
 if ($viewMonth > 12) { $viewMonth = 1;  $viewYear++; }
 
-$daysInMon = cal_days_in_month(CAL_GREGORIAN, $viewMonth, $viewYear);
+$daysInMon = (int) date('t', mktime(0, 0, 0, $viewMonth, 1, $viewYear));
 $firstDay  = sprintf('%04d-%02d-01', $viewYear, $viewMonth);
 $lastDay   = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $daysInMon);
 
