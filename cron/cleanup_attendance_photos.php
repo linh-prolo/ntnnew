@@ -5,7 +5,10 @@
  */
 
 $uploadBase = dirname(__DIR__) . '/uploads/attendance/';
-$retentionInterval = getenv('ATTENDANCE_PHOTO_RETENTION_INTERVAL') ?: '-2 months';
+$retentionIntervalEnv = getenv('ATTENDANCE_PHOTO_RETENTION_INTERVAL') ?: '';
+$retentionInterval = preg_match('/^-\d+\s+(day|days|month|months)$/', $retentionIntervalEnv)
+    ? $retentionIntervalEnv
+    : '-2 months';
 $cutoffTimestamp = strtotime($retentionInterval);
 if ($cutoffTimestamp === false) {
     $cutoffTimestamp = strtotime('-2 months');

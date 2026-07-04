@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    $base64 = substr($photoData, 23);
+    $base64 = substr($photoData, strlen($photoPrefix));
     $imgBinary = base64_decode($base64, true);
     if ($imgBinary === false || strlen($imgBinary) < $minPhotoBytes || strlen($imgBinary) > $maxPhotoBytes) {
         setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng thử lại.');
@@ -627,6 +627,7 @@ let gpsReady = false;
 let photoReady = false;
 let stream = null;
 const MAX_PHOTO_BYTES = 300000;
+const PHOTO_DATA_PREFIX = 'data:image/jpeg;base64,';
 
 if (displayIpEl) {
     fetch('/erp/api/attendance/get_ip.php')
@@ -725,7 +726,7 @@ btnCapture?.addEventListener('click', () => {
     context.drawImage(cameraVideo, 0, 0, photoCanvas.width, photoCanvas.height);
 
     const imgData = photoCanvas.toDataURL('image/jpeg', 0.8);
-    const approxBytes = Math.ceil((imgData.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
+    const approxBytes = Math.ceil((imgData.length - PHOTO_DATA_PREFIX.length) * 3 / 4);
     if (approxBytes > MAX_PHOTO_BYTES) {
         alert('Ảnh chụp quá lớn. Vui lòng chụp lại gần hơn.');
         return;
