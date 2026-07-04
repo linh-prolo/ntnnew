@@ -5,7 +5,7 @@
  */
 
 $uploadBase = dirname(__DIR__) . '/uploads/attendance/';
-$retentionInterval = '-2 months';
+$retentionInterval = getenv('ATTENDANCE_PHOTO_RETENTION_INTERVAL') ?: '-2 months';
 $cutoff = date('Y-m-d', strtotime($retentionInterval));
 
 if (!is_dir($uploadBase)) {
@@ -26,10 +26,15 @@ foreach (glob($uploadBase . '*', GLOB_ONLYDIR) as $dayDir) {
             if ($fileSize !== false) {
                 $freed += $fileSize;
             }
-            @unlink($file);
-            $deleted++;
+            if (is_file($file) && unlink($file)) {
+                $deleted++;
+            } else {
+                error_log('cleanup_attendance_photos: cannot delete file ' . $file);
+            }
         }
-        @rmdir($dayDir);
+        if (!rmdir($dayDir)) {
+            error_log('cleanup_attendance_photos: cannot remove directory ' . $dayDir);
+        }
     }
 }
 

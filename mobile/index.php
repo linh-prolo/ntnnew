@@ -17,6 +17,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = $_POST['action'] ?? '';
+    if (!in_array($action, ['check_in', 'check_out'], true)) {
+        setFlash('danger', 'Yêu cầu chấm công không hợp lệ. Vui lòng thử lại.');
+        header('Location: /erp/mobile/index.php');
+        exit();
+    }
     $today  = date('Y-m-d');
     $now    = date('Y-m-d H:i:s');
 
@@ -92,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $photoData = trim((string)($_POST['photo_data'] ?? ''));
     $photoPath = null;
     $photoPrefix = 'data:image/jpeg;base64,';
+    // Giới hạn đầu vào gốc lớn hơn file nén để tránh payload base64 quá lớn.
     $minPhotoBytes = 1000;
     $maxPhotoBytes = 800000;
     $maxCompressedPhotoBytes = 300000;
@@ -149,7 +155,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    $filename = $user['id'] . '_' . $action . '_' . date('Ymd_His') . '.jpg';
+    $actionFileTag = $action === 'check_in' ? 'in' : 'out';
+    $filename = $user['id'] . '_' . $actionFileTag . '_' . date('Ymd_His') . '.jpg';
     $fullPath = $uploadDir . $filename;
     $photoPath = '/erp/uploads/attendance/' . $uploadDate . '/' . $filename;
     if (file_put_contents($fullPath, $compressedBinary) === false) {
@@ -666,7 +673,7 @@ function resetPreview() {
 async function startCamera() {
     if (!cameraVideo || !btnCapture) return;
 
-    if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    if (!window.isSecureContext && !['localhost', '127.0.0.1', '::1'].includes(location.hostname)) {
         showCameraError('<strong>⚠️ Camera yêu cầu HTTPS.</strong> Vui lòng truy cập bằng HTTPS để chấm công.');
         return;
     }
