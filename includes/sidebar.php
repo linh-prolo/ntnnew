@@ -59,7 +59,7 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
     <!-- CHẤM CÔNG -->
     <li class="nav-item">
       <a class="nav-link sidebar-group-toggle" href="#" data-target="grp-attendance">
-        <i class="fas fa-calendar-check"></i><span>Chấm công</span>
+        <i class="fas fa-calendar-check"></i><span>QL Nhân Sự</span>
         <i class="fas fa-chevron-down sidebar-arrow"></i>
       </a>
       <ul class="sidebar-submenu" id="grp-attendance">
