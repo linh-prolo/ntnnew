@@ -133,8 +133,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
     ob_start();
     imagejpeg($image, null, 80);
-    $compressedBinary = (string)ob_get_clean();
+    $compressedBinary = ob_get_clean();
     imagedestroy($image);
+    if ($compressedBinary === false) {
+        setFlash('danger', '📸 Không thể xử lý ảnh chụp. Vui lòng thử lại.');
+        header('Location: /erp/modules/attendance/index.php');
+        exit();
+    }
 
     if ($compressedBinary === '' || strlen($compressedBinary) < $minPhotoBytes || strlen($compressedBinary) > $maxCompressedPhotoBytes) {
         setFlash('danger', '📸 Ảnh chụp không hợp lệ. Vui lòng chụp lại gần khuôn mặt hơn.');
@@ -426,7 +431,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 
                             <div id="cameraSection" class="mb-3">
                                 <div class="border rounded p-2 bg-light">
-                                    <video id="cameraVideo" class="w-100 rounded" autoplay playsinline muted style="max-height:280px;background:#000;"></video>
+                                    <video id="cameraVideo" aria-label="Camera preview for attendance photo" class="w-100 rounded" autoplay playsinline muted style="max-height:280px;background:#000;"></video>
                                 </div>
                                 <button type="button" class="btn btn-outline-primary w-100 mt-2" id="btnCapture" disabled>
                                     📸 Chụp ảnh khuôn mặt
@@ -701,6 +706,7 @@ btnCapture?.addEventListener('click', () => {
     context.drawImage(cameraVideo, 0, 0, photoCanvas.width, photoCanvas.height);
 
     const imgData = photoCanvas.toDataURL('image/jpeg', 0.8);
+    // Base64 quy đổi: 4 ký tự mã hóa tương ứng ~3 bytes dữ liệu nhị phân.
     const approxBytes = Math.ceil((imgData.length - PHOTO_DATA_PREFIX.length) * 3 / 4);
     if (approxBytes > MAX_PHOTO_BYTES) {
         alert('Ảnh chụp quá lớn. Vui lòng chụp lại gần hơn.');

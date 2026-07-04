@@ -6,7 +6,7 @@
 
 $uploadBase = dirname(__DIR__) . '/uploads/attendance/';
 $retentionIntervalEnv = getenv('ATTENDANCE_PHOTO_RETENTION_INTERVAL') ?: '';
-$retentionInterval = preg_match('/^-\d+\s+(day|days|month|months)$/', $retentionIntervalEnv)
+$retentionInterval = preg_match('/^-\d+\s+(?:day|month)s?$/', $retentionIntervalEnv)
     ? $retentionIntervalEnv
     : '-2 months';
 $cutoffTimestamp = strtotime($retentionInterval);
@@ -38,6 +38,10 @@ foreach (glob($uploadBase . '*', GLOB_ONLYDIR) as $dayDir) {
             } else {
                 error_log('cleanup_attendance_photos: cannot delete file ' . $file);
             }
+        }
+        if (!empty(glob($dayDir . '/*'))) {
+            error_log('cleanup_attendance_photos: directory not empty after cleanup ' . $dayDir);
+            continue;
         }
         if (!rmdir($dayDir)) {
             error_log('cleanup_attendance_photos: cannot remove directory ' . $dayDir);
