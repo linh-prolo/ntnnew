@@ -16,7 +16,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
     // Duyệt 1 đơn
     if ($action === 'approve') {
-        $stmt = $pdo->prepare("
+        $ownerStmt = $pdo->prepare("SELECT u.id, u.role FROM overtime_requests ot JOIN users u ON ot.user_id = u.id WHERE ot.id = ? AND ot.status = 'pending'");
+        $ownerStmt->execute([$ot_id]);
+        $owner = $ownerStmt->fetch();
+
+        if (!$owner || !canApprove($user, $owner)) {
+            setFlash('danger', '⛔ Bạn không có quyền duyệt đơn này.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $stmt = $pdo->prepare("
             UPDATE overtime_requests
             SET status = 'approved', approved_by = ?, approved_at = NOW()
             WHERE id = ? AND status = 'pending'
@@ -45,7 +55,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         if (empty($reject_reason)) {
             setFlash('danger', '❌ Vui lòng nhập lý do từ chối.');
         } else {
-            $stmt = $pdo->prepare("
+            $ownerStmt = $pdo->prepare("SELECT u.id, u.role FROM overtime_requests ot JOIN users u ON ot.user_id = u.id WHERE ot.id = ? AND ot.status = 'pending'");
+            $ownerStmt->execute([$ot_id]);
+            $owner = $ownerStmt->fetch();
+
+            if (!$owner || !canApprove($user, $owner)) {
+                setFlash('danger', '⛔ Bạn không có quyền từ chối đơn này.');
+                header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+                exit();
+            }
+
+            $stmt = $pdo->prepare("
                 UPDATE overtime_requests
                 SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ?
                 WHERE id = ? AND status = 'pending'
@@ -75,64 +95,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         if (empty($ids)) {
             setFlash('danger', 'Vui lòng chọn ít nhất 1 đơn.');
         } else {
-            $count = 0;
-            foreach ($ids as $id) {
-                $id   = (int)$id;
-                $stmt = $pdo->prepare("UPDATE overtime_requests SET status='approved', approved_by=?, approved_at=NOW() WHERE id=? AND status='pending'");
-                $stmt->execute([$user['id'], $id]);
-                if ($stmt->rowCount()) {
-                    $count++;
-                    $ot = $pdo->prepare("SELECT user_id, ot_date, hours FROM overtime_requests WHERE id=?");
-                    $ot->execute([$id]);
-                    $otData = $ot->fetch();
-                    $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?,?,?,'ot_approved',?)")
-                        ->execute([
-                            $otData['user_id'],
-                            '✅ Đơn OT được duyệt',
-                            'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' (' . $otData['hours'] . ' giờ) đã được duyệt.',
-                            $id
-                        ]);
-                }
-            }
-            setFlash('success', "✅ Đã duyệt <strong>$count</strong> đơn OT.");
-        }
-        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
-        exit();
-    }
-
-    // ── Từ chối hàng loạt ──
-    if ($action === 'bulk_reject') {
-        $ids = $_POST['selected_ids'] ?? [];
-        $bulk_reason = trim($_POST['bulk_reject_reason'] ?? '');
-        if (empty($ids)) {
-            setFlash('danger', 'Vui lòng chọn ít nhất 1 đơn.');
-        } elseif (empty($bulk_reason)) {
-            setFlash('danger', 'Vui lòng nhập lý do từ chối hàng loạt.');
-        } else {
-            $count = 0;
-            foreach ($ids as $id) {
-                $id   = (int)$id;
-                $stmt = $pdo->prepare("UPDATE overtime_requests SET status='rejected', approved_by=?, approved_at=NOW(), reject_reason=? WHERE id=? AND status='pending'");
-                $stmt->execute([$user['id'], $bulk_reason, $id]);
-                if ($stmt->rowCount()) {
-                    $count++;
-                    $ot = $pdo->prepare("SELECT user_id, ot_date FROM overtime_requests WHERE id=?");
-                    $ot->execute([$id]);
-                    $otData = $ot->fetch();
-                    $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?,?,?,'ot_rejected',?)")
-                        ->execute([
-                            $otData['user_id'],
-                            '❌ Đơn OT bị từ chối',
-                            'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' bị từ chối. Lý do: ' . $bulk_reason,
-                            $id
-                        ]);
-                }
-            }
-            setFlash('warning', "⚠️ Đã từ chối <strong>$count</strong> đơn OT.");
-        }
-        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
-        exit();
-    }
+            // Pre-fetch all owners in a single query to avoid N+1
+            $intIds = array_map('intval', $ids);
+            $placeholders = implode(',', array_fill(0, count($intIds), '?'));
+            $ownersStmt = $pdo->prepare("SELECT u.id, u.role, ot.id AS ot_id FROM overtime_requests ot JOIN users u ON ot.user_id = u.id WHERE ot.id IN ($placeholders) AND ot.status = 'pending'");
+            $ownersStmt->execute($intIds);
+            $ownerMap = [];
+            foreach ($ownersStmt->fetchAll() as $row) {
+                $ownerMap[(int)$row['ot_id']] = ['id' => $row['id'], 'role' => $row['role']];
+            }
+
+            $count = 0;
+            foreach ($intIds as $id) {
+                $owner = $ownerMap[$id] ?? null;
+                if (!$owner || !canApprove($user, $owner)) continue;
+
+                $stmt = $pdo->prepare("UPDATE overtime_requests SET status='approved', approved_by=?, approved_at=NOW() WHERE id=? AND status='pending'");
+                $stmt->execute([$user['id'], $id]);
+                if ($stmt->rowCount()) {
+                    $count++;
+                    $ot = $pdo->prepare("SELECT user_id, ot_date, hours FROM overtime_requests WHERE id=?");
+                    $ot->execute([$id]);
+                    $otData = $ot->fetch();
+                    $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?,?,?,'ot_approved',?)")
+                        ->execute([
+                            $otData['user_id'],
+                            '✅ Đơn OT được duyệt',
+                            'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' (' . $otData['hours'] . ' giờ) đã được duyệt.',
+                            $id
+                        ]);
+                }
+            }
+            setFlash('success', "✅ Đã duyệt <strong>$count</strong> đơn OT.");
+        }
+        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+        exit();
+    }
+
+    // ── Từ chối hàng loạt ──
+    if ($action === 'bulk_reject') {
+        $ids = $_POST['selected_ids'] ?? [];
+        $bulk_reason = trim($_POST['bulk_reject_reason'] ?? '');
+        if (empty($ids)) {
+            setFlash('danger', 'Vui lòng chọn ít nhất 1 đơn.');
+        } elseif (empty($bulk_reason)) {
+            setFlash('danger', 'Vui lòng nhập lý do từ chối hàng loạt.');
+        } else {
+            // Pre-fetch all owners in a single query to avoid N+1
+            $intIds = array_map('intval', $ids);
+            $placeholders = implode(',', array_fill(0, count($intIds), '?'));
+            $ownersStmt = $pdo->prepare("SELECT u.id, u.role, ot.id AS ot_id FROM overtime_requests ot JOIN users u ON ot.user_id = u.id WHERE ot.id IN ($placeholders) AND ot.status = 'pending'");
+            $ownersStmt->execute($intIds);
+            $ownerMap = [];
+            foreach ($ownersStmt->fetchAll() as $row) {
+                $ownerMap[(int)$row['ot_id']] = ['id' => $row['id'], 'role' => $row['role']];
+            }
+
+            $count = 0;
+            foreach ($intIds as $id) {
+                $owner = $ownerMap[$id] ?? null;
+                if (!$owner || !canApprove($user, $owner)) continue;
+
+                $stmt = $pdo->prepare("UPDATE overtime_requests SET status='rejected', approved_by=?, approved_at=NOW(), reject_reason=? WHERE id=? AND status='pending'");
+                $stmt->execute([$user['id'], $bulk_reason, $id]);
+                if ($stmt->rowCount()) {
+                    $count++;
+                    $ot = $pdo->prepare("SELECT user_id, ot_date FROM overtime_requests WHERE id=?");
+                    $ot->execute([$id]);
+                    $otData = $ot->fetch();
+                    $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?,?,?,'ot_rejected',?)")
+                        ->execute([
+                            $otData['user_id'],
+                            '❌ Đơn OT bị từ chối',
+                            'Đơn OT ngày ' . formatDate($otData['ot_date']) . ' bị từ chối. Lý do: ' . $bulk_reason,
+                            $id
+                        ]);
+                }
+            }
+            setFlash('warning', "⚠️ Đã từ chối <strong>$count</strong> đơn OT.");
+        }
+        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+        exit();
+    }
 
     // ── Xóa đơn OT (chỉ director) ──
     if ($action === 'delete_ot') {
@@ -160,7 +204,7 @@ $filterUser   = (int)($_GET['user_id'] ?? 0);
 // ── Query danh sách đơn OT ──
 $sql = "
     SELECT ot.*,
-           u.full_name, u.employee_code,
+           u.full_name, u.employee_code, u.role AS requester_role,
            d.name AS dept_name,
            ws.shift_name, ws.color AS shift_color,
            ws.ot_multiplier, ws.weekend_multiplier, ws.holiday_multiplier,
@@ -176,7 +220,28 @@ $params = [$filterMonth, $filterYear];
 if ($filterStatus !== 'all') { $sql .= " AND ot.status = ?"; $params[] = $filterStatus; }
 if ($filterDept)             { $sql .= " AND u.department_id = ?"; $params[] = $filterDept; }
 if ($filterUser)             { $sql .= " AND ot.user_id = ?"; $params[] = $filterUser; }
-$sql .= " ORDER BY FIELD(ot.status,'pending','approved','rejected'), ot.ot_date DESC";
+
+$myLevel = getRoleLevel($user['role']);
+
+// Compute the list of roles this user can approve, derived from getRoleLevel()
+$allRoles = ['employee', 'production', 'manager', 'accountant', 'director'];
+$approvableRoles = array_values(array_filter($allRoles, fn($r) => getRoleLevel($r) < $myLevel));
+
+// Loại đơn của chính mình + chỉ hiển thị đơn cấp dưới
+$sql .= " AND ot.user_id != ?";
+$params[] = $user['id'];
+
+if (!empty($approvableRoles)) {
+    $rolePlaceholders = implode(',', array_fill(0, count($approvableRoles), '?'));
+    $sql .= " AND u.role IN ($rolePlaceholders)";
+    foreach ($approvableRoles as $r) {
+        $params[] = $r;
+    }
+} else {
+    $sql .= " AND 1=0";
+}
+
+$sql .= " ORDER BY FIELD(ot.status,'pending','approved','rejected'), ot.ot_date DESC";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
@@ -484,8 +549,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-center">
-                            <?php if ($ot['status'] === 'pending'): ?>
-                            <div class="d-flex gap-1 justify-content-center">
+                            <?php
+                            $requesterForCheck = ['id' => $ot['user_id'], 'role' => $ot['requester_role']];
+                            if ($ot['status'] === 'pending' && canApprove($user, $requesterForCheck)): ?>
+                            <div class="d-flex gap-1 justify-content-center">
                                 <!-- Duyệt 1 đơn: dùng JS tạo form riêng, không lồng form -->
                                 <button type="button" class="btn btn-xs btn-success"
                                         onclick="approveOne(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')"
@@ -541,8 +608,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <span class="badge bg-<?= $otp[1] ?>"><?= $otp[0] ?></span>
                     </div>
                     <div class="small text-muted mb-2"><?= htmlspecialchars($ot['reason']) ?></div>
-                    <?php if ($ot['status'] === 'pending'): ?>
-                    <div class="d-flex gap-2">
+                    <?php
+                    $requesterForCheck = ['id' => $ot['user_id'], 'role' => $ot['requester_role']];
+                    if ($ot['status'] === 'pending' && canApprove($user, $requesterForCheck)): ?>
+                    <div class="d-flex gap-2">
                         <button type="button" class="btn btn-success btn-sm flex-grow-1"
                                 onclick="approveOne(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')">
                             ✅ Duyệt
