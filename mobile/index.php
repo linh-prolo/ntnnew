@@ -154,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $uploadDate = date('Y-m-d');
     $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/erp/uploads/attendance/' . $uploadDate . '/';
-    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0750, true) && !is_dir($uploadDir)) {
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
         setFlash('danger', '📸 Không thể tạo thư mục lưu ảnh. Liên hệ quản trị viên.');
         header('Location: /erp/mobile/index.php');
         exit();
