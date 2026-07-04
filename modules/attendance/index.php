@@ -191,6 +191,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     };
 
     if ($action === 'check_in') {
+        $isLate = 0;
+        $lateMinutes = 0;
+        try {
+            $shStmt = $pdo->prepare("
+                SELECT ws.* FROM employee_shifts es
+                JOIN work_shifts ws ON es.shift_id = ws.id
+                WHERE es.user_id = ? AND es.effective_date <= ?
+                  AND (es.end_date IS NULL OR es.end_date >= ?)
+                ORDER BY es.effective_date DESC LIMIT 1
+            ");
+            $shStmt->execute([$user['id'], $today, $today]);
+            $shift = $shStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($shift) {
+                $shiftStart = strtotime($today . ' ' . $shift['start_time']);
+                $threshold  = $shiftStart + (((int)($shift['late_threshold'] ?? 0)) * 60);
+                $actualIn   = strtotime($now);
+                if ($actualIn > $threshold) {
+                    $isLate      = 1;
+                    $lateMinutes = (int)(($actualIn - $shiftStart) / 60);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('check_in shift query failed: ' . $e->getMessage());
+        }
+
         $existStmt = $pdo->prepare("SELECT id, check_in FROM attendance_logs WHERE user_id = ? AND work_date = ?");
         $existStmt->execute([$user['id'], $today]);
         $existing = $existStmt->fetch(PDO::FETCH_ASSOC);
@@ -201,15 +227,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                     $pdo->prepare("UPDATE attendance_logs
                         SET check_in = ?, source = 'manual',
                             check_in_ip = ?, check_in_lat = ?, check_in_lng = ?, check_in_location_flag = ?,
-                            device_id = ?, same_device_alert = ?, check_in_photo = ?
+                            device_id = ?, same_device_alert = ?, check_in_photo = ?, is_late = ?, late_minutes = ?
                         WHERE id = ?")
-                        ->execute([$now, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath, $existing['id']]);
+                        ->execute([$now, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath, $isLate, $lateMinutes, $existing['id']]);
                 }
             } else {
                 $pdo->prepare("INSERT INTO attendance_logs
-                    (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert, check_in_photo)
-                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath]);
+                    (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert, check_in_photo, is_late, late_minutes)
+                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath, $isLate, $lateMinutes]);
             }
         } catch (Throwable $e) {
             error_log('check_in with location failed: ' . $e->getMessage());
@@ -338,7 +364,7 @@ foreach ($monthLogs as $log) {
     if ($log['check_in']) {
         $totalWorkDays++;
         $totalWorkHours += $log['work_hours'];
-        if (date('H:i', strtotime($log['check_in'])) > '08:15') $lateDays++;
+        if (!empty($log['is_late'])) $lateDays++;
     }
 }
 
@@ -546,7 +572,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 $cellClass .= ' leave-cell';
                                 $content = '<div class="small text-info fw-bold">🏖️ Phép</div>';
                             } elseif ($log && $log['check_in']) {
-                                $isLate = date('H:i', strtotime($log['check_in'])) > '08:15';
+                                $isLate = !empty($log['is_late']);
                                 $locBadge = match ($log['check_in_location_flag'] ?? 'unknown') {
                                     'verified' => '<span class="badge bg-success badge-sm mt-1">📍✅</span>',
                                     'outside'  => '<span class="badge bg-warning text-dark badge-sm mt-1">📍⚠️</span>',
