@@ -227,38 +227,33 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             </div>
                         </div>
 
-                        <!-- Hệ số lương -->
-                        <div class="card bg-light border-0 p-3 mb-3">
-                            <p class="fw-semibold small mb-2">💰 Hệ số lương OT</p>
-                            <div class="row g-2">
-                                <div class="col-4">
-                                    <label class="form-label small mb-1">Ngày thường</label>
-                                    <div class="input-group input-group-sm">
-                                        <input type="number" name="ot_multiplier" class="form-control form-control-sm"
-                                               value="<?= $editShift['ot_multiplier'] ?? 1.5 ?>"
-                                               step="0.25" min="1" max="5">
-                                        <span class="input-group-text">x</span>
-                                    </div>
-                                    <div class="form-text" style="font-size:10px;">VD: 1.5 = 150%</div>
+                        <!-- Info box hệ số OT — tự động đổi theo toggle ca đêm -->
+                        <div id="otRateBox" class="mb-3">
+                            <!-- Ca ngày -->
+                            <div id="otRateDay" class="card border-info border-0 bg-light p-3">
+                                <p class="fw-semibold small mb-2">💰 Hệ số lương OT áp dụng</p>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <span class="badge bg-warning text-dark">Ngày thường ×1.5</span>
+                                    <span class="badge bg-info text-white">Cuối tuần ×2.0</span>
+                                    <span class="badge bg-danger text-white">Ngày lễ ×3.0</span>
                                 </div>
-                                <div class="col-4">
-                                    <label class="form-label small mb-1">Cuối tuần</label>
-                                    <div class="input-group input-group-sm">
-                                        <input type="number" name="weekend_multiplier" class="form-control form-control-sm"
-                                               value="<?= $editShift['weekend_multiplier'] ?? 2.0 ?>"
-                                               step="0.25" min="1" max="5">
-                                        <span class="input-group-text">x</span>
-                                    </div>
+                                <small class="text-muted">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Hệ số cố định theo quy định — áp dụng cho tất cả ca ngày
+                                </small>
+                            </div>
+                            <!-- Ca đêm (ẩn mặc định) -->
+                            <div id="otRateNight" class="card border-0 bg-dark text-white p-3 d-none">
+                                <p class="fw-semibold small mb-2">🌙 Hệ số lương OT ca đêm áp dụng</p>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <span class="badge bg-warning text-dark">🌙 Đêm thường ×2.1</span>
+                                    <span class="badge bg-info text-white">🌙 Đêm CN ×2.7</span>
+                                    <span class="badge bg-danger text-white">🌙 Đêm lễ ×3.9</span>
                                 </div>
-                                <div class="col-4">
-                                    <label class="form-label small mb-1">Ngày lễ</label>
-                                    <div class="input-group input-group-sm">
-                                        <input type="number" name="holiday_multiplier" class="form-control form-control-sm"
-                                               value="<?= $editShift['holiday_multiplier'] ?? 3.0 ?>"
-                                               step="0.25" min="1" max="5">
-                                        <span class="input-group-text">x</span>
-                                    </div>
-                                </div>
+                                <small class="text-white-50">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Hệ số cố định cho ca đêm + 30% phụ trội đêm trên lương cơ bản/giờ
+                                </small>
                             </div>
                         </div>
 
@@ -301,7 +296,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <small class="text-muted" id="previewInfo">
                                 <?= $editShift['work_hours'] ?? 8 ?> giờ/ca &bull;
                                 Trễ: ±<?= $editShift['late_threshold'] ?? 15 ?> phút &bull;
-                                OT: <?= $editShift['ot_multiplier'] ?? 1.5 ?>x
+                                OT: <?= !empty($editShift['is_night_shift']) ? '×2.1/2.7/3.9 (đêm)' : '×1.5/2.0/3.0' ?>
                             </small>
                         </div>
 
@@ -356,15 +351,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     <span class="badge bg-light text-dark border">
                                         ⚡ trễ ±<?= $sh['late_threshold'] ?>p
                                     </span>
-                                    <span class="badge bg-warning text-dark border">
-                                        OT <?= $sh['ot_multiplier'] ?>x
-                                    </span>
-                                    <span class="badge bg-info text-white border">
-                                        T7/CN <?= $sh['weekend_multiplier'] ?>x
-                                    </span>
-                                    <span class="badge bg-danger text-white border">
-                                        Lễ <?= $sh['holiday_multiplier'] ?>x
-                                    </span>
+                                    <?php if (!empty($sh['is_night_shift'])): ?>
+                                    <span class="badge bg-warning text-dark border">🌙 OT ×2.1/2.7/3.9</span>
+                                    <?php else: ?>
+                                    <span class="badge bg-warning text-dark border">OT ×1.5/2.0/3.0</span>
+                                    <?php endif; ?>
                                     <?php if (!empty($sh['is_night_shift'])): ?>
                                     <span class="badge bg-dark text-white border">🌙 Ca đêm +30%</span>
                                     <?php endif; ?>
@@ -460,17 +451,29 @@ function updatePreview() {
     const end     = document.getElementById('endTime').value;
     const hours   = document.getElementById('workHours').value;
     const late    = document.querySelector('[name="late_threshold"]').value;
-    const ot      = document.querySelector('[name="ot_multiplier"]').value;
+    const isNight = document.getElementById('isNightShift').checked;
     const color   = document.getElementById('colorInput').value;
 
     document.getElementById('previewName').textContent = name;
     document.getElementById('previewTime').textContent = `${start} – ${end}`;
     document.getElementById('previewTime').style.background = color;
     document.getElementById('previewInfo').textContent =
-        `${hours} giờ/ca • Trễ: ±${late} phút • OT: ${ot}x`;
+        `${hours} giờ/ca • Trễ: ±${late} phút • OT: ${isNight ? '×2.1/2.7/3.9 (đêm)' : '×1.5/2.0/3.0'}`;
     document.getElementById('shiftPreview').style.background = color + '20';
     document.getElementById('shiftPreview').style.borderLeftColor = color;
 }
+
+function updateOTRateBox() {
+    const isNight = document.getElementById('isNightShift').checked;
+    document.getElementById('otRateDay').classList.toggle('d-none', isNight);
+    document.getElementById('otRateNight').classList.toggle('d-none', !isNight);
+}
+document.getElementById('isNightShift')?.addEventListener('change', function() {
+    updateOTRateBox();
+    updatePreview();
+});
+// Gọi ngay khi load để hiện đúng box
+document.getElementById('isNightShift') && updateOTRateBox();
 
 // Gắn events
 ['startTime','endTime','breakMin'].forEach(id => {
@@ -478,7 +481,6 @@ function updatePreview() {
 });
 document.querySelector('[name="shift_name"]')?.addEventListener('input', updatePreview);
 document.querySelector('[name="late_threshold"]')?.addEventListener('input', updatePreview);
-document.querySelector('[name="ot_multiplier"]')?.addEventListener('input', updatePreview);
 
 // Tooltip bootstrap
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
