@@ -22,7 +22,7 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$user['id']]);
 $profile = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-$changePasswordPath = '/home/runner/work/ntnnew/ntnnew/modules/users/change_password.php';
+$changePasswordPath = $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/users/change_password.php';
 
 mobilePageStart('Tài khoản của tôi', $user);
 ?>
