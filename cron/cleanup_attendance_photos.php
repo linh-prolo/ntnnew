@@ -6,9 +6,16 @@
 
 $uploadBase = dirname(__DIR__) . '/uploads/attendance/';
 $retentionIntervalEnv = getenv('ATTENDANCE_PHOTO_RETENTION_INTERVAL') ?: '';
-$retentionInterval = preg_match('/^-\d+\s+(?:day|month)s?$/', $retentionIntervalEnv)
-    ? $retentionIntervalEnv
-    : '-2 months';
+$retentionInterval = '-2 months';
+if (preg_match('/^-(\d+)\s+(day|month)s?$/', $retentionIntervalEnv, $matches)) {
+    $amount = (int)$matches[1];
+    $unit = $matches[2];
+    $isAllowed = ($unit === 'day' && $amount >= 1 && $amount <= 365)
+        || ($unit === 'month' && $amount >= 1 && $amount <= 24);
+    if ($isAllowed) {
+        $retentionInterval = '-' . $amount . ' ' . $unit . ($amount > 1 ? 's' : '');
+    }
+}
 $cutoffTimestamp = strtotime($retentionInterval);
 if ($cutoffTimestamp === false) {
     $cutoffTimestamp = strtotime('-2 months');
