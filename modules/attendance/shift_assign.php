@@ -84,6 +84,14 @@ foreach ($employees as $emp) {
 }
 
 $assignedCount = count(array_filter($employees, fn($e) => !empty($shiftsByUser[$e['id']])));
+$employeesMap = [];
+foreach ($employees as $emp) {
+    $employeesMap[(int)$emp['id']] = [
+        'id' => (int)$emp['id'],
+        'full_name' => $emp['full_name'],
+        'employee_code' => $emp['employee_code']
+    ];
+}
 
 $csrf = generateCSRF();
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
@@ -402,13 +410,7 @@ const monthTo = <?= json_encode($monthTo) ?>;
 const filterMonth = <?= (int)$filterMonth ?>;
 const filterYear = <?= (int)$filterYear ?>;
 const csrfToken = <?= json_encode($csrf) ?>;
-const employeesMap = <?= json_encode(array_column(array_map(function ($e) {
-    return [
-        'id' => (int)$e['id'],
-        'full_name' => $e['full_name'],
-        'employee_code' => $e['employee_code']
-    ];
-}, $employees), null, 'id'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+const employeesMap = <?= json_encode($employeesMap, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 const shiftsByUser = <?= json_encode($shiftsByUser, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 
 // ── Lọc nhân viên theo phòng ban ──
@@ -476,7 +478,11 @@ async function applyRotateShift() {
         const data = await resp.json();
         if (data.ok) {
             const detailHtml = Array.isArray(data.detail)
-                ? `<ul class="mb-0 mt-1">${data.detail.map(item => `<li>📅 ${escapeHtml(item.from)} – ${escapeHtml(item.to)} → <strong>${escapeHtml(item.shift)}</strong></li>`).join('')}</ul>`
+                ? `<ul class="mb-0 mt-1">${
+                    data.detail.map((item) => {
+                        return `<li>📅 ${escapeHtml(item.from)} – ${escapeHtml(item.to)} → <strong>${escapeHtml(item.shift)}</strong></li>`;
+                    }).join('')
+                }</ul>`
                 : '';
             const summary = data.employee_name
                 ? `✅ Đã phân ca luân phiên cho <strong>${escapeHtml(data.employee_name)}</strong>:`
