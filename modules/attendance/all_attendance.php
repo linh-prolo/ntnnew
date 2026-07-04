@@ -99,6 +99,31 @@ $holidays = $pdo->prepare("SELECT holiday_date FROM holidays WHERE MONTH(holiday
 $holidays->execute([$viewMonth, $viewYear]);
 $holidayDates = array_column($holidays->fetchAll(), 'holiday_date');
 
+// Query cảnh báo cùng thiết bị hôm nay
+$deviceAlerts = [];
+try {
+    $alertsToday = $pdo->prepare("
+        SELECT al.user_id, al.work_date, al.device_id,
+               u.full_name, u.employee_code, d.name AS dept_name,
+               GROUP_CONCAT(DISTINCT CONCAT(u2.full_name, ' (', u2.employee_code, ')') SEPARATOR ', ') AS shared_with
+        FROM attendance_logs al
+        JOIN users u ON u.id = al.user_id
+        LEFT JOIN departments d ON d.id = u.department_id
+        JOIN attendance_logs al2 ON al2.device_id = al.device_id
+            AND al2.work_date = al.work_date
+            AND al2.user_id != al.user_id
+        JOIN users u2 ON u2.id = al2.user_id
+        WHERE al.same_device_alert = 1
+          AND al.work_date = ?
+        GROUP BY al.user_id, al.work_date
+        ORDER BY al.work_date DESC
+    ");
+    $alertsToday->execute([date('Y-m-d')]);
+    $deviceAlerts = $alertsToday->fetchAll();
+} catch (Throwable $e) {
+    error_log('device alerts query error: ' . $e->getMessage());
+}
+
 function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates) {
     $stats = [
         'work_days'=>0,'absent_days'=>0,'leave_days'=>0,
@@ -287,6 +312,18 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
 
     <!-- ══ CHẾ ĐỘ THÁNG ══ -->
+    <?php if (!empty($deviceAlerts)): ?>
+    <div class="alert alert-danger border-start border-5 border-danger mb-3">
+        <h6 class="fw-bold mb-2">⚠️ Cảnh báo nghi vấn chấm công hộ hôm nay</h6>
+        <?php foreach ($deviceAlerts as $a): ?>
+        <div class="mb-1 small">
+            🔴 <strong><?= htmlspecialchars($a['full_name']) ?></strong> (<?= htmlspecialchars($a['employee_code']) ?>)
+            — cùng thiết bị với: <?= htmlspecialchars($a['shared_with']) ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
     <?php if ($viewMode === 'month'): ?>
     <div class="d-flex flex-wrap gap-2 mb-2">
         <?php $legends = [
@@ -363,11 +400,19 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates);
                         // Tổng phút trừ = trễ + về sớm
                         $totalDeductMin = $st['late_minutes'] + $st['early_minutes'];
+                        // Kiểm tra có cảnh báo cùng thiết bị trong tháng không
+                        $hasSameDeviceAlert = false;
+                        foreach ($attMap[$emp['id']] ?? [] as $attRow) {
+                            if (!empty($attRow['same_device_alert'])) { $hasSameDeviceAlert = true; break; }
+                        }
                     ?>
                     <tr class="emp-row">
                         <td class="sticky-col py-1">
                             <div class="fw-semibold" style="font-size:12px;line-height:1.2;">
                                 <?= htmlspecialchars($emp['full_name']) ?>
+                                <?php if ($hasSameDeviceAlert): ?>
+                                <span class="badge bg-danger ms-1" style="font-size:9px;" title="Nghi vấn chấm công hộ - cùng thiết bị">⚠️ Hộ?</span>
+                                <?php endif; ?>
                             </div>
                             <div style="font-size:10px;" class="text-muted">
                                 <?= $emp['employee_code'] ?>
@@ -531,10 +576,19 @@ $content .= '</div>';
                         $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates);
                         foreach ($grandTotals as $k => $v) $grandTotals[$k] += $st[$k];
                         $totalDeductMin = $st['late_minutes'] + $st['early_minutes'];
+                        $hasSameDeviceAlertSum = false;
+                        foreach ($attMap[$emp['id']] ?? [] as $attRow) {
+                            if (!empty($attRow['same_device_alert'])) { $hasSameDeviceAlertSum = true; break; }
+                        }
                     ?>
                     <tr>
                         <td class="sticky-col">
-                            <div class="fw-semibold small"><?= htmlspecialchars($emp['full_name']) ?></div>
+                            <div class="fw-semibold small">
+                                <?= htmlspecialchars($emp['full_name']) ?>
+                                <?php if ($hasSameDeviceAlertSum): ?>
+                                <span class="badge bg-danger ms-1" style="font-size:9px;" title="Nghi vấn chấm công hộ - cùng thiết bị">⚠️ Hộ?</span>
+                                <?php endif; ?>
+                            </div>
                             <div class="text-muted" style="font-size:10px;">
                                 <?= $emp['employee_code'] ?>
                                 <?php if ($emp['shift_name']): ?>
