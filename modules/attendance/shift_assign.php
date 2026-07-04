@@ -7,6 +7,14 @@ requireRole('director', 'accountant', 'manager', 'production');
 $pdo  = getDBConnection();
 $user = currentUser();
 
+// Lọc tháng/năm (mặc định tháng hiện tại)
+$filterMonth = (int)($_GET['month'] ?? $_POST['month'] ?? date('m'));
+$filterYear  = (int)($_GET['year']  ?? $_POST['year']  ?? date('Y'));
+if ($filterMonth < 1 || $filterMonth > 12) $filterMonth = (int)date('m');
+if ($filterYear < 2000 || $filterYear > 2100) $filterYear = (int)date('Y');
+$monthFrom   = sprintf('%04d-%02d-01', $filterYear, $filterMonth);
+$monthTo     = date('Y-m-t', mktime(0, 0, 0, $filterMonth, 1, $filterYear));
+
 // ── XỬ LÝ PHÂN CÔNG ────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? '')) {
     $action = $_POST['action'] ?? '';
@@ -30,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                 ->execute([$uid, $shift_id, $effective_date, $end_date, $user['id']]);
         }
         setFlash('success', '✅ Đã phân công ca cho ' . count($user_ids) . ' nhân viên.');
-        header('Location: /erp/modules/attendance/shift_assign.php');
+        header('Location: /erp/modules/attendance/shift_assign.php?month=' . $filterMonth . '&year=' . $filterYear);
         exit();
     }
 
@@ -38,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     if ($action === 'remove') {
         $pdo->prepare("DELETE FROM employee_shifts WHERE id = ?")->execute([(int)$_POST['assign_id']]);
         setFlash('success', '✅ Đã xóa phân công ca.');
-        header('Location: /erp/modules/attendance/shift_assign.php');
+        header('Location: /erp/modules/attendance/shift_assign.php?month=' . $filterMonth . '&year=' . $filterYear);
         exit();
     }
 }
@@ -47,21 +55,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 $shifts = $pdo->query("SELECT * FROM work_shifts WHERE is_active = 1 ORDER BY start_time")->fetchAll();
 $depts  = $pdo->query("SELECT * FROM departments ORDER BY name")->fetchAll();
 
-// Nhân viên + ca hiện tại
+// Nhân viên
 $employees = $pdo->query("
-    SELECT u.id, u.full_name, u.employee_code, d.name AS dept_name, r.display_name AS role_name,
-           ws.shift_name AS current_shift, ws.color AS shift_color,
-           ws.start_time, ws.end_time, es.effective_date, es.id AS assign_id
+    SELECT u.id, u.full_name, u.employee_code, u.department_id,
+           d.name AS dept_name, r.display_name AS role_name
     FROM users u
     LEFT JOIN departments d ON u.department_id = d.id
     LEFT JOIN roles r ON u.role_id = r.id
-    LEFT JOIN employee_shifts es ON es.user_id = u.id
-        AND es.effective_date <= CURDATE()
-        AND (es.end_date IS NULL OR es.end_date >= CURDATE())
-    LEFT JOIN work_shifts ws ON es.shift_id = ws.id
     WHERE u.is_active = 1
     ORDER BY d.name, u.full_name
 ")->fetchAll();
+
+// Lấy toàn bộ ca của từng nhân viên trong tháng lọc
+$shiftsByUser = [];
+$stmtShifts = $pdo->prepare("
+    SELECT es.id AS assign_id, es.effective_date, es.end_date,
+           ws.shift_name, ws.color, ws.start_time, ws.end_time, ws.is_night_shift
+    FROM employee_shifts es
+    JOIN work_shifts ws ON es.shift_id = ws.id
+    WHERE es.user_id = ?
+      AND es.effective_date <= ?
+      AND (es.end_date IS NULL OR es.end_date >= ?)
+    ORDER BY es.effective_date ASC
+");
+foreach ($employees as $emp) {
+    $stmtShifts->execute([$emp['id'], $monthTo, $monthFrom]);
+    $shiftsByUser[$emp['id']] = $stmtShifts->fetchAll(PDO::FETCH_ASSOC);
+}
+
+$assignedCount = count(array_filter($employees, fn($e) => !empty($shiftsByUser[$e['id']])));
+$employeesMap = [];
+foreach ($employees as $emp) {
+    $employeesMap[(int)$emp['id']] = [
+        'id' => (int)$emp['id'],
+        'full_name' => $emp['full_name'],
+        'employee_code' => $emp['employee_code']
+    ];
+}
 
 $csrf = generateCSRF();
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
@@ -158,8 +188,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             </div>
                             <div class="employee-checklist border rounded p-2" style="max-height:220px; overflow-y:auto;">
                                 <?php foreach ($employees as $emp): ?>
+                                <?php $empTimelineShifts = $shiftsByUser[$emp['id']] ?? []; ?>
                                 <div class="form-check emp-item py-1 border-bottom"
-                                     data-dept="<?= $emp['department_id'] ?? 0 ?>">
+                                             data-dept="<?= $emp['department_id'] ?? 0 ?>">
                                     <input class="form-check-input emp-checkbox" type="checkbox"
                                            name="user_ids[]" value="<?= $emp['id'] ?>"
                                            id="emp<?= $emp['id'] ?>">
@@ -167,10 +198,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         <div class="fw-semibold"><?= htmlspecialchars($emp['full_name']) ?></div>
                                         <div class="text-muted" style="font-size:11px;">
                                             <?= $emp['employee_code'] ?> &bull; <?= htmlspecialchars($emp['dept_name'] ?? '-') ?>
-                                            <?php if ($emp['current_shift']): ?>
-                                            &bull; <span class="badge" style="background:<?= $emp['shift_color'] ?>; font-size:10px;">
-                                                <?= htmlspecialchars($emp['current_shift']) ?>
+                                            <?php if (!empty($empTimelineShifts)): ?>
+                                            &bull; <span class="badge" style="background:<?= $empTimelineShifts[0]['color'] ?>; font-size:10px;">
+                                                <?= htmlspecialchars($empTimelineShifts[0]['shift_name']) ?>
                                             </span>
+                                            <?php if (count($empTimelineShifts) > 1): ?>
+                                                <span class="text-muted" style="font-size:10px;">+<?= count($empTimelineShifts) - 1 ?> ca</span>
+                                            <?php endif; ?>
                                             <?php else: ?>
                                             &bull; <span class="text-danger" style="font-size:10px;">Chưa có ca</span>
                                             <?php endif; ?>
@@ -191,14 +225,25 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             </div>
         </div>
 
-        <!-- ── BẢNG NHÂN VIÊN & CA HIỆN TẠI ── -->
+        <!-- ── BẢNG NHÂN VIÊN & CA THEO THÁNG ── -->
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white fw-bold d-flex justify-content-between">
-                    <span>📋 Ca làm hiện tại của nhân viên</span>
-                    <span class="text-muted small fw-normal">
-                        <?= count(array_filter($employees, fn($e) => $e['current_shift'])) ?>/<?= count($employees) ?> đã phân công
-                    </span>
+                    <span>📋 Ca tháng <?= $filterMonth ?>/<?= $filterYear ?> của nhân viên</span>
+                    <div class="d-flex gap-2 align-items-center">
+                        <form method="GET" class="d-flex gap-2 align-items-center">
+                            <select name="month" class="form-select form-select-sm" style="width:120px" onchange="this.form.submit()">
+                                <?php for ($m = 1; $m <= 12; $m++): ?>
+                                <option value="<?= $m ?>" <?= $m === $filterMonth ? 'selected' : '' ?>>Tháng <?= $m ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <input type="number" name="year" class="form-control form-control-sm" style="width:90px" value="<?= $filterYear ?>">
+                            <button class="btn btn-sm btn-outline-primary">Xem</button>
+                        </form>
+                        <span class="text-muted small fw-normal">
+                            <?= $assignedCount ?>/<?= count($employees) ?> đã phân công
+                        </span>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -207,14 +252,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <tr>
                                     <th>Nhân viên</th>
                                     <th>Phòng ban</th>
-                                    <th>Ca hiện tại</th>
-                                    <th>Giờ làm</th>
-                                    <th>Áp dụng từ</th>
+                                    <th>Ca tháng <?= $filterMonth ?>/<?= $filterYear ?></th>
                                     <th class="text-center">Thao tác</th>
                                 </tr>
                             </thead>
                             <tbody>
                             <?php foreach ($employees as $emp): ?>
+                            <?php $empShifts = $shiftsByUser[$emp['id']] ?? []; ?>
                             <tr>
                                 <td>
                                     <div class="fw-semibold small"><?= htmlspecialchars($emp['full_name']) ?></div>
@@ -222,36 +266,26 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </td>
                                 <td><small><?= htmlspecialchars($emp['dept_name'] ?? '-') ?></small></td>
                                 <td>
-                                    <?php if ($emp['current_shift']): ?>
-                                    <span class="badge rounded-pill" style="background:<?= $emp['shift_color'] ?>">
-                                        <?= htmlspecialchars($emp['current_shift']) ?>
-                                    </span>
+                                    <?php if (!empty($empShifts)): ?>
+                                        <?php foreach ($empShifts as $sh): ?>
+                                            <?php
+                                            $from = $sh['effective_date'] < $monthFrom ? $monthFrom : $sh['effective_date'];
+                                            $toRaw = $sh['end_date'] ?: $monthTo;
+                                            $to = $toRaw > $monthTo ? $monthTo : $toRaw;
+                                            ?>
+                                            <span class="badge rounded-pill me-1 mb-1" style="background:<?= htmlspecialchars($sh['color']) ?>">
+                                                <?= htmlspecialchars($sh['shift_name']) ?> <?= date('d/m', strtotime($from)) ?>–<?= date('d/m', strtotime($to)) ?>
+                                            </span>
+                                        <?php endforeach; ?>
                                     <?php else: ?>
                                     <span class="badge bg-danger">⚠️ Chưa phân công</span>
                                     <?php endif; ?>
                                 </td>
-                                <td>
-                                    <?php if ($emp['start_time']): ?>
-                                    <small class="text-muted">
-                                        <?= substr($emp['start_time'],0,5) ?> – <?= substr($emp['end_time'],0,5) ?>
-                                    </small>
-                                    <?php else: ?><small>-</small><?php endif; ?>
-                                </td>
-                                <td>
-                                    <small><?= $emp['effective_date'] ? formatDate($emp['effective_date']) : '-' ?></small>
-                                </td>
                                 <td class="text-center">
-                                    <?php if ($emp['assign_id']): ?>
-                                    <form method="POST" class="d-inline">
-                                        <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
-                                        <input type="hidden" name="action" value="remove">
-                                        <input type="hidden" name="assign_id" value="<?= $emp['assign_id'] ?>">
-                                        <button class="btn btn-xs btn-outline-danger"
-                                                onclick="return confirm('Xóa phân công ca của <?= htmlspecialchars($emp['full_name']) ?>?')">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </form>
-                                    <?php endif; ?>
+                                    <button type="button" class="btn btn-xs btn-outline-primary"
+                                            onclick="openShiftTimeline(<?= (int)$emp['id'] ?>)">
+                                        👁 Xem lịch
+                                    </button>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -290,7 +324,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <label class="form-label fw-semibold">Tháng</label>
                     <select id="rotateMonth" class="form-select">
                         <?php for ($m = 1; $m <= 12; $m++): ?>
-                        <option value="<?= $m ?>" <?= $m == (int)date('m') ? 'selected' : '' ?>>
+                        <option value="<?= $m ?>" <?= $m === $filterMonth ? 'selected' : '' ?>>
                             Tháng <?= $m ?>
                         </option>
                         <?php endfor; ?>
@@ -298,7 +332,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 </div>
                 <div class="col-md-3">
                     <label class="form-label fw-semibold">Năm</label>
-                    <input type="number" id="rotateYear" class="form-control" value="<?= date('Y') ?>">
+                    <input type="number" id="rotateYear" class="form-control" value="<?= $filterYear ?>">
                 </div>
                 <!-- Chọn ca -->
                 <div class="col-md-6">
@@ -338,12 +372,47 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 </div><!-- /.container-fluid -->
 </div><!-- /.main-content -->
 
+<!-- Modal xem lịch ca chi tiết -->
+<div class="modal fade" id="shiftTimelineModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" id="shiftTimelineTitle">Lịch ca</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                        <tr>
+                            <th>Khoảng ngày</th>
+                            <th>Ca</th>
+                            <th>Giờ làm</th>
+                            <th class="text-center">Xóa</th>
+                        </tr>
+                        </thead>
+                        <tbody id="shiftTimelineBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 .btn-xs { padding: 2px 8px; font-size: 12px; }
 .emp-item:last-child { border-bottom: none !important; }
 </style>
 
 <script>
+const monthFrom = <?= json_encode($monthFrom) ?>;
+const monthTo = <?= json_encode($monthTo) ?>;
+const filterMonth = <?= (int)$filterMonth ?>;
+const filterYear = <?= (int)$filterYear ?>;
+const csrfToken = <?= json_encode($csrf) ?>;
+const employeesMap = <?= json_encode($employeesMap, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+const shiftsByUser = <?= json_encode($shiftsByUser, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
 // ── Lọc nhân viên theo phòng ban ──
 document.getElementById('deptFilter').addEventListener('change', function() {
     const deptId = this.value;
@@ -408,13 +477,81 @@ async function applyRotateShift() {
         });
         const data = await resp.json();
         if (data.ok) {
-            result.innerHTML = `<div class="alert alert-success py-2">✅ ${data.msg}</div>`;
+            const detailHtml = Array.isArray(data.detail)
+                ? `<ul class="mb-0 mt-1">${
+                    data.detail.map((item) => {
+                        return `<li>📅 ${escapeHtml(item.from)} – ${escapeHtml(item.to)} → <strong>${escapeHtml(item.shift)}</strong></li>`;
+                    }).join('')
+                }</ul>`
+                : '';
+            const summary = data.employee_name
+                ? `✅ Đã phân ca luân phiên cho <strong>${escapeHtml(data.employee_name)}</strong>:`
+                : `✅ ${escapeHtml(data.msg || '')}`;
+            result.innerHTML = `<div class="alert alert-success">${summary}${detailHtml}</div>`;
         } else {
             result.innerHTML = `<div class="alert alert-danger py-2">❌ ${data.msg}</div>`;
         }
     } catch (e) {
         result.innerHTML = '<div class="alert alert-danger py-2">❌ Lỗi kết nối server.</div>';
     }
+}
+
+function clipDateRange(fromDate, toDate) {
+    const from = fromDate < monthFrom ? monthFrom : fromDate;
+    const toOrigin = toDate || monthTo;
+    const to = toOrigin > monthTo ? monthTo : toOrigin;
+    return { from, to };
+}
+
+function formatDateVn(dateStr) {
+    if (!dateStr) return '-';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+function escapeHtml(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function openShiftTimeline(userId) {
+    const employee = employeesMap[userId];
+    const list = Array.isArray(shiftsByUser[userId]) ? shiftsByUser[userId] : [];
+    const title = document.getElementById('shiftTimelineTitle');
+    const body = document.getElementById('shiftTimelineBody');
+
+    const employeeName = employee && employee.full_name ? employee.full_name : 'Nhân viên';
+    const employeeCode = employee && employee.employee_code ? employee.employee_code : '-';
+    title.textContent = `Lịch ca tháng ${filterMonth}/${filterYear} — ${employeeName} (${employeeCode})`;
+
+    if (!list.length) {
+        body.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-3">⚠️ Chưa phân công ca trong tháng này</td></tr>`;
+    } else {
+        body.innerHTML = list.map((item) => {
+            const range = clipDateRange(item.effective_date, item.end_date);
+            return `<tr>
+                <td>📅 ${formatDateVn(range.from)} – ${formatDateVn(range.to)}</td>
+                <td><span class="badge" style="background:${escapeHtml(item.color)}">${escapeHtml(item.shift_name)}</span></td>
+                <td>${escapeHtml((item.start_time || '').slice(0, 5))}–${escapeHtml((item.end_time || '').slice(0, 5))}</td>
+                <td class="text-center">
+                    <form method="POST" onsubmit="return confirm('Xóa phân công ca này?')">
+                        <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
+                        <input type="hidden" name="action" value="remove">
+                        <input type="hidden" name="assign_id" value="${parseInt(item.assign_id, 10) || 0}">
+                        <input type="hidden" name="month" value="${filterMonth}">
+                        <input type="hidden" name="year" value="${filterYear}">
+                        <button class="btn btn-xs btn-outline-danger"><i class="fas fa-times"></i></button>
+                    </form>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    new bootstrap.Modal(document.getElementById('shiftTimelineModal')).show();
 }
 </script>
 

@@ -13,3 +13,4 @@ Hoặc mở phpMyAdmin → chọn database → tab SQL → paste nội dung file
 | File | Mô tả | Ngày |
 |------|-------|------|
 | add_night_ot_columns.sql | Thêm cột OT ca đêm vào bảng payroll_slips | 2026-07-03 |
+| add_shift_note_column.sql | Thêm cột note (tùy chọn) cho employee_shifts | 2026-07-04 |
