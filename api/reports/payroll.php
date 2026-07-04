@@ -17,7 +17,7 @@ if ($filterTs === false) {
 $filterYear  = (int)date('Y', $filterTs);
 $filterMonth = (int)date('m', $filterTs);
 
-// ── KPI: Nhân sự ──────────────────────────────────────────────────────────
+// ── KPI: Nhân sự ─────────────────────────────────────────────────────────
 $totalActive  = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE is_active = 1")->fetchColumn();
 $hasInsurance = (int)$pdo->query("
     SELECT COUNT(*) FROM employee_profiles WHERE has_social_insurance = 1
@@ -49,7 +49,12 @@ $stmtPayroll = $pdo->prepare("
         COALESCE(SUM(ps.ot_weekday_hours), 0)                                  AS gio_ot_thuong,
         COALESCE(SUM(ps.ot_weekend_hours), 0)                                  AS gio_ot_cuoi_tuan,
         COALESCE(SUM(ps.ot_holiday_hours), 0)                                  AS gio_ot_le,
-        COALESCE(SUM(COALESCE(ps.ot_night_hours, 0)), 0)                       AS gio_ot_dem,
+        -- FIX: cộng cả 3 loại OT đêm mới (night_weekday + night_weekend + night_holiday)
+        COALESCE(SUM(
+            COALESCE(ps.ot_night_weekday_hours, 0)
+            + COALESCE(ps.ot_night_weekend_hours, 0)
+            + COALESCE(ps.ot_night_holiday_hours, 0)
+        ), 0)                                                                   AS gio_ot_dem,
         COALESCE(SUM(ps.kpi_deduction), 0)                                     AS tong_tru_kpi,
         COALESCE(SUM(ps.late_early_deduction), 0)                              AS tong_tru_muon
     FROM payroll_slips ps
@@ -119,14 +124,16 @@ $stmtAtt->execute([$dateFrom, $dateTo]);
 $attKpi = $stmtAtt->fetch(PDO::FETCH_ASSOC) ?: [];
 
 // ── OT tháng ─────────────────────────────────────────────────────────────
+// FIX: OT đêm dùng IN ('night_weekday','night_weekend','night_holiday')
+// thay vì ot_type='night' cũ (không còn tồn tại)
 $stmtOT = $pdo->prepare("
     SELECT
-        COALESCE(SUM(CASE WHEN ot_type='weekday' THEN hours ELSE 0 END), 0) AS gio_ot_thuong,
-        COALESCE(SUM(CASE WHEN ot_type='weekend' THEN hours ELSE 0 END), 0) AS gio_ot_cuoi_tuan,
-        COALESCE(SUM(CASE WHEN ot_type='holiday' THEN hours ELSE 0 END), 0) AS gio_ot_le,
-        COALESCE(SUM(CASE WHEN ot_type='night'   THEN hours ELSE 0 END), 0) AS gio_ot_dem,
-        COALESCE(SUM(hours), 0)                                              AS tong_gio_ot,
-        COUNT(DISTINCT user_id)                                              AS so_nv_ot
+        COALESCE(SUM(CASE WHEN ot_type = 'weekday'                                        THEN hours ELSE 0 END), 0) AS gio_ot_thuong,
+        COALESCE(SUM(CASE WHEN ot_type = 'weekend'                                        THEN hours ELSE 0 END), 0) AS gio_ot_cuoi_tuan,
+        COALESCE(SUM(CASE WHEN ot_type = 'holiday'                                        THEN hours ELSE 0 END), 0) AS gio_ot_le,
+        COALESCE(SUM(CASE WHEN ot_type IN ('night_weekday','night_weekend','night_holiday') THEN hours ELSE 0 END), 0) AS gio_ot_dem,
+        COALESCE(SUM(hours), 0)                                                                                        AS tong_gio_ot,
+        COUNT(DISTINCT user_id)                                                                                        AS so_nv_ot
     FROM overtime_requests
     WHERE status = 'approved'
       AND ot_date BETWEEN ? AND ?
