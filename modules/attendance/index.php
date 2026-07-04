@@ -52,6 +52,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
     $ip = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['HTTP_X_REAL_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown')[0]);
 
+    // ── Device Fingerprint ────────────────────────────────────────────────
+    $deviceId = trim($_POST['device_id'] ?? '');
+    // Chỉ chấp nhận hex 64 ký tự (SHA-256)
+    if (!preg_match('/^[0-9a-f]{64}$/', $deviceId)) {
+        $deviceId = null;
+    }
+
+    // Kiểm tra cùng thiết bị với NV khác trong ngày hôm nay
+    $sameDeviceAlert = 0;
+    $sameDeviceUsers = [];
+    if ($deviceId) {
+        try {
+            $devStmt = $pdo->prepare("
+                SELECT al.user_id, u.full_name, u.employee_code
+                FROM attendance_logs al
+                JOIN users u ON u.id = al.user_id
+                WHERE al.device_id = ?
+                  AND al.work_date = ?
+                  AND al.user_id != ?
+                  AND al.check_in IS NOT NULL
+            ");
+            $devStmt->execute([$deviceId, $today, $user['id']]);
+            $sameDeviceUsers = $devStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($sameDeviceUsers)) {
+                $sameDeviceAlert = 1;
+            }
+        } catch (Throwable $e) {
+            error_log('device check error: ' . $e->getMessage());
+        }
+    }
+
     // Tính location flag
     $locationFlag = 'unknown';
     try {
@@ -87,15 +118,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                 if (!$existing['check_in']) {
                     $pdo->prepare("UPDATE attendance_logs
                         SET check_in = ?, source = 'manual',
-                            check_in_ip = ?, check_in_lat = ?, check_in_lng = ?, check_in_location_flag = ?
+                            check_in_ip = ?, check_in_lat = ?, check_in_lng = ?, check_in_location_flag = ?,
+                            device_id = ?, same_device_alert = ?
                         WHERE id = ?")
-                        ->execute([$now, $ip, $lat, $lng, $locationFlag, $existing['id']]);
+                        ->execute([$now, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $existing['id']]);
                 }
             } else {
                 $pdo->prepare("INSERT INTO attendance_logs
-                    (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag)
-                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?)")
-                    ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag]);
+                    (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert)
+                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?)")
+                    ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert]);
             }
         } catch (Throwable $e) {
             error_log('check_in with location failed: ' . $e->getMessage());
@@ -112,6 +144,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                 error_log('check_in fallback failed: ' . $e2->getMessage());
             }
         }
+
+        // Gửi notification cảnh báo cho director/manager/accountant
+        if ($sameDeviceAlert && !empty($sameDeviceUsers)) {
+            try {
+                $otherNames = implode(', ', array_map(fn($u) => $u['full_name'] . ' (' . $u['employee_code'] . ')', $sameDeviceUsers));
+                $alertMsg = "⚠️ Cảnh báo chấm công hộ: " . $user['full_name'] . " (" . $user['employee_code'] . ") dùng cùng thiết bị với {$otherNames} vào ngày " . date('d/m/Y') . ". Vui lòng kiểm tra!";
+
+                $mgrStmt = $pdo->query("
+                    SELECT u.id FROM users u
+                    JOIN roles r ON r.id = u.role_id
+                    WHERE r.name IN ('director', 'manager', 'accountant') AND u.is_active = 1
+                ");
+                $managers = $mgrStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                $notifStmt = $pdo->prepare("
+                    INSERT INTO notifications (user_id, title, message, type, reference_id, created_at)
+                    VALUES (?, '⚠️ Nghi vấn chấm công hộ', ?, 'same_device_alert', ?, NOW())
+                ");
+                foreach ($managers as $mgr) {
+                    $notifStmt->execute([$mgr, $alertMsg, $user['id']]);
+                }
+            } catch (Throwable $e) {
+                error_log('same_device_alert notification error: ' . $e->getMessage());
+            }
+
+            try {
+                $otherIds = array_column($sameDeviceUsers, 'user_id');
+                $placeholders = implode(',', array_fill(0, count($otherIds), '?'));
+                $updateParams = array_merge([$today], $otherIds);
+                $pdo->prepare("UPDATE attendance_logs SET same_device_alert = 1 WHERE work_date = ? AND user_id IN ($placeholders)")
+                    ->execute($updateParams);
+            } catch (Throwable $e) {
+                error_log('same_device_alert update others error: ' . $e->getMessage());
+            }
+        }
+
         setFlash('success', 'Chấm công vào ca thành công lúc ' . date('H:i') . $flagMsg);
 
     } elseif ($action === 'check_out') {
@@ -257,6 +325,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
                             <input type="hidden" name="lat" id="inputLat" value="">
                             <input type="hidden" name="lng" id="inputLng" value="">
+                            <input type="hidden" name="device_id" id="inputDeviceId" value="">
 
                             <!-- Trạng thái GPS -->
                             <div id="gpsStatus" class="alert alert-warning py-2 small mb-2">
@@ -526,6 +595,30 @@ if (btnSubmit && gpsStatusEl && gpsTextEl && inputLat && inputLng) {
         );
     }
 }
+
+// ── Device Fingerprint ──────────────────────────────────────────────────
+async function getDeviceId() {
+    const raw = [
+        navigator.userAgent,
+        navigator.language,
+        screen.width + 'x' + screen.height,
+        screen.colorDepth,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+        navigator.hardwareConcurrency || '',
+        navigator.platform || '',
+    ].join('|');
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(raw);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+getDeviceId().then(id => {
+    const el = document.getElementById('inputDeviceId');
+    if (el) el.value = id;
+}).catch(() => {});
 </script>
 
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
