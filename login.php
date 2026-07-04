@@ -159,8 +159,8 @@ $csrf = generateCSRF();
 <div class="login-card">
     <div class="login-logo">
         <div class="logo-icon">🏢</div>
-        <h4>ERP System</h4>
-        <p>Hệ thống Quản lý Doanh nghiệp</p>
+        <h4>NTN VIỆT NAM - ERP System</h4>
+        <p>ÔNG TY CP SẢN XUẤT VÀ CUNG ỨNG NTN VIỆT NAM</p>
     </div>
 
     <?php if ($error): ?>
@@ -203,7 +203,7 @@ $csrf = generateCSRF();
         <i class="fas fa-info-circle me-1"></i>
         Đăng nhập bằng <strong>Mã nhân viên</strong> (VD: <strong>NV001</strong>)
         hoặc <strong>tên đăng nhập</strong> đã được cấp.
-        Mật khẩu mặc định: <strong>123456</strong>
+        
     </div>
 </div>
 
