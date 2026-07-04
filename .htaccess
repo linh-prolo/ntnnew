@@ -4,6 +4,9 @@ DirectoryIndex login.php index.php
 RewriteEngine On
 RewriteBase /erp/
 
+# Cho phép truy cập trực tiếp vào file tĩnh trong uploads (ảnh chấm công, v.v.)
+RewriteRule ^uploads/ - [L]
+
 # Redirect / về login
 RewriteRule ^$ login.php [R=302,L]
 
