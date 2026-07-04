@@ -17,6 +17,9 @@ $freed = 0;
 
 foreach (glob($uploadBase . '*', GLOB_ONLYDIR) as $dayDir) {
     $dirDate = basename($dayDir);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dirDate)) {
+        continue;
+    }
     if ($dirDate < $cutoff) {
         foreach (glob($dayDir . '/*.jpg') as $file) {
             $fileSize = filesize($file);
