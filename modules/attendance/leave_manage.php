@@ -13,8 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $action = $_POST['action']; // approved / rejected
     $reason = trim($_POST['reject_reason'] ?? '');
 
-    // Lấy role của người tạo đơn
-    $ownerStmt = $pdo->prepare("SELECT u.id, u.role FROM leave_requests lr JOIN users u ON lr.user_id = u.id WHERE lr.id = ? AND lr.status = 'pending'");
+    // ── Kiểm tra quyền đa cấp: chỉ được duyệt cấp dưới, không tự duyệt ──
+    $ownerStmt = $pdo->prepare("
+        SELECT u.id, r.name AS role
+        FROM leave_requests lr
+        JOIN users u ON lr.user_id = u.id
+        JOIN roles r ON u.role_id = r.id
+        WHERE lr.id = ? AND lr.status = 'pending'
+    ");
     $ownerStmt->execute([$id]);
     $owner = $ownerStmt->fetch();
 
@@ -28,13 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $stmt->execute([$action, $user['id'], $reason, $id]);
 
     if ($stmt->rowCount()) {
-        // Thông báo cho nhân viên
-        $req = $pdo->prepare("SELECT user_id FROM leave_requests WHERE id=?");
-        $req->execute([$id]);
-        $lr = $req->fetch();
         $msg = $action==='approved' ? '✅ Đơn xin nghỉ phép của bạn đã được duyệt.' : '❌ Đơn xin nghỉ phép bị từ chối: '.$reason;
         $notif = $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Kết quả đơn nghỉ phép', ?, 'leave_request', ?)");
-        $notif->execute([$lr['user_id'], $msg, $id]);
+        $notif->execute([$owner['id'], $msg, $id]);
         setFlash('success', 'Đã xử lý đơn nghỉ phép.');
     }
     header('Location: /erp/modules/attendance/leave_manage.php');
@@ -42,34 +44,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 }
 
 $filter = $_GET['filter'] ?? 'pending';
-
-// Xác định role level của người dùng hiện tại để filter đơn được phép duyệt
 $myLevel = getRoleLevel($user['role']);
-// Compute the list of roles this user can approve, derived from getRoleLevel()
-$allRoles = ['employee', 'production', 'manager', 'accountant', 'director'];
-$approvableRoles = array_values(array_filter($allRoles, fn($r) => getRoleLevel($r) < $myLevel));
 
-if (empty($approvableRoles)) {
-    $requests = [];
-} else {
-    $rolePlaceholders = implode(',', array_fill(0, count($approvableRoles), '?'));
-    $stmt = $pdo->prepare("
-        SELECT lr.*, u.full_name, u.employee_code, u.role AS requester_role,
-               d.name as department_name,
-               a.full_name as approver_name
-        FROM leave_requests lr
-        JOIN users u ON lr.user_id = u.id
-        LEFT JOIN departments d ON u.department_id = d.id
-        LEFT JOIN users a ON lr.approved_by = a.id
-        WHERE (? = 'all' OR lr.status = ?)
-          AND lr.user_id != ?
-          AND u.role IN ($rolePlaceholders)
-        ORDER BY lr.created_at DESC
-        LIMIT 50
-    ");
-    $stmt->execute(array_merge([$filter, $filter, $user['id']], $approvableRoles));
-    $requests = $stmt->fetchAll();
-}
+// Chỉ hiển thị đơn của cấp dưới mình và không phải đơn của chính mình
+$stmt = $pdo->prepare("
+    SELECT lr.*, u.full_name, u.employee_code, r.name AS requester_role,
+           d.name as department_name,
+           a.full_name as approver_name
+    FROM leave_requests lr
+    JOIN users u ON lr.user_id = u.id
+    JOIN roles r ON u.role_id = r.id
+    LEFT JOIN departments d ON u.department_id = d.id
+    LEFT JOIN users a ON lr.approved_by = a.id
+    WHERE (? = 'all' OR lr.status = ?)
+      AND lr.user_id != ?
+      AND (
+           (r.name = 'employee'   AND ? >= 2)
+        OR (r.name = 'production' AND ? >= 3)
+        OR (r.name = 'manager'    AND ? >= 4)
+        OR (r.name = 'accountant' AND ? >= 5)
+      )
+    ORDER BY lr.created_at DESC
+    LIMIT 50
+");
+$stmt->execute([$filter, $filter, $user['id'], $myLevel, $myLevel, $myLevel, $myLevel]);
+$requests = $stmt->fetchAll();
 
 $csrf = generateCSRF();
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
@@ -102,7 +101,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <div class="fw-semibold"><?= htmlspecialchars($r['full_name']) ?></div>
                             <small class="text-muted"><?= $r['employee_code'] ?> &bull; <?= htmlspecialchars($r['department_name'] ?? '') ?></small>
                         </td>
-                        <td><?= ['annual'=>'Phép năm','sick'=>'Ốm','unpaid'=>'KL','other'=>'Khác'][$r['leave_type']] ?></td>
+                        <td><?= ['annual'=>'Phép năm','sick'=>'Ốm','unpaid'=>'KL','other'=>'Khác'][$r['leave_type']] ?? $r['leave_type'] ?></td>
                         <td><?= formatDate($r['start_date']) ?></td>
                         <td><?= formatDate($r['end_date']) ?></td>
                         <td><?= $r['total_days'] ?></td>
@@ -116,7 +115,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td>
                         <?php
                         $requesterForCheck = ['id' => $r['user_id'], 'role' => $r['requester_role']];
-                        if ($r['status'] === 'pending' && canApprove($user, $requesterForCheck)): ?>
+                        if ($r['status'] === 'pending' && canApprove($user, $requesterForCheck)):
+                        ?>
                             <div class="d-flex gap-1">
                                 <form method="POST" style="display:inline">
                                     <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
