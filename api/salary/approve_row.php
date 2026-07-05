@@ -17,7 +17,13 @@ if (!$rowId || !$userId) {
 }
 
 // Kiểm tra khoản lương thuộc đúng user
-$chk = $pdo->prepare("SELECT id, custom_name, approval_status FROM employee_salaries WHERE id = ? AND user_id = ?");
+$chk = $pdo->prepare("
+    SELECT es.id, es.custom_name, es.approval_status,
+           sc.component_name
+    FROM employee_salaries es
+    LEFT JOIN salary_components sc ON es.component_id = sc.id
+    WHERE es.id = ? AND es.user_id = ?
+");
 $chk->execute([$rowId, $userId]);
 $row = $chk->fetch();
 
@@ -40,7 +46,7 @@ try {
 
     echo json_encode([
         'ok'  => true,
-        'msg' => '✅ Đã duyệt khoản lương: ' . ($row['custom_name'] ?? ''),
+        'msg' => '✅ Đã duyệt khoản lương: ' . ($row['custom_name'] ?: ($row['component_name'] ?? '')),
         'id'  => $rowId,
     ]);
 } catch (Throwable $e) {
