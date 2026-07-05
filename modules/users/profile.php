@@ -22,9 +22,10 @@ if (!hasRole('director', 'accountant', 'manager') && $targetId !== (int)$current
 $isAdmin      = hasRole('director', 'accountant');
 $isOwnProfile = ($targetId === (int)$currentUser['id']);
 
-$canEdit       = $isAdmin;                    // Chỉ GĐ/KT mới sửa hồ sơ
-$canEditSalary = $isAdmin;                    // Chỉ GĐ/KT mới sửa bảng lương
-$canViewSalary = $isAdmin || $isOwnProfile;   // Xem lương: GĐ/KT hoặc chính mình
+$canEdit          = $isAdmin;                    // Chỉ GĐ/KT mới sửa hồ sơ
+$canEditSalary    = $isAdmin;                    // Chỉ GĐ/KT mới sửa bảng lương
+$canViewSalary    = $isAdmin || $isOwnProfile;   // Xem lương: GĐ/KT hoặc chính mình
+$canApproveSalary = hasRole('director');          // Chỉ GĐ mới được duyệt lương
 
 // ── Lấy thông tin user ───────────────────────────────────────────────────
 $targetUser = null;
@@ -724,6 +725,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     Từ <?= date('d/m/Y', strtotime($row['effective_date'])) ?>
                                 </span>
                                 <?php endif; ?>
+                                <?php if (($row['approval_status'] ?? 'pending') === 'approved'): ?>
+                                <span class="badge bg-success ms-1">✅ Đã duyệt</span>
+                                <?php else: ?>
+                                <span class="badge bg-warning text-dark ms-1">⏳ Chờ duyệt</span>
+                                <?php endif; ?>
                             </td>
                             <td class="text-end fw-semibold <?= $typeClass ?>">
                                 <?= number_format($row['amount'], 0, '.', ',') ?>
@@ -731,14 +737,24 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <?php if ($canEditSalary): ?>
                             <td class="text-center">
                                 <div class="d-flex gap-1 justify-content-center">
+                                    <?php if ($canApproveSalary && ($row['approval_status'] ?? 'pending') === 'pending'): ?>
+                                    <button type="button" class="btn btn-xs btn-outline-success"
+                                            onclick="approveSalaryRow(<?= $row['id'] ?>)"
+                                            title="Duyệt">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <?php endif; ?>
+                                    <?php $isApproved = ($row['approval_status'] ?? 'pending') === 'approved'; ?>
                                     <button type="button" class="btn btn-xs btn-outline-primary"
                                             onclick="editSalaryRow(<?= $row['id'] ?>, <?= htmlspecialchars(json_encode($row)) ?>)"
-                                            title="Sửa">
+                                            title="Sửa"
+                                            <?= ($isApproved && !$canApproveSalary) ? 'disabled' : '' ?>>
                                         <i class="fas fa-edit"></i>
                                     </button>
                                     <button type="button" class="btn btn-xs btn-outline-danger"
                                             onclick="deleteSalaryRow(<?= $row['id'] ?>, '<?= htmlspecialchars($name) ?>')"
-                                            title="Xóa">
+                                            title="Xóa"
+                                            <?= ($isApproved && !$canApproveSalary) ? 'disabled' : '' ?>>
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -1038,8 +1054,20 @@ async function deleteSalaryRow(rowId, name) {
             document.querySelector(`tr[data-row-id="${rowId}"]`)?.remove();
             recalcGross(); renumberRows();
             showToast('success', 'Đã xóa khoản lương');
-        }
+        } else alert('Lỗi: ' + data.msg);
     } catch(e) { alert('Lỗi kết nối!'); }
+}
+async function approveSalaryRow(rowId) {
+    if (!confirm('Duyệt khoản lương này?')) return;
+    try {
+        const res  = await fetch('/erp/api/salary/approve_row.php', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ row_id: rowId, user_id: <?= $targetId ?> })
+        });
+        const data = await res.json();
+        if (data.ok) { showToast('success', data.msg); setTimeout(() => location.reload(), 600); }
+        else alert('Lỗi: ' + data.msg);
+    } catch(e) { alert('Lỗi kết nối server!'); }
 }
 function formatAmountInput(el) {
     let raw = el.value.replace(/[^0-9]/g,'');

@@ -41,10 +41,16 @@ if (!$chkUser->fetch()) {
 try {
     if ($rowId > 0) {
         // ── Cập nhật ────────────────────────────────────────────────
-        $chk = $pdo->prepare("SELECT id FROM employee_salaries WHERE id = ? AND user_id = ?");
+        $chk = $pdo->prepare("SELECT id, approval_status FROM employee_salaries WHERE id = ? AND user_id = ?");
         $chk->execute([$rowId, $userId]);
-        if (!$chk->fetch()) {
+        $existingRow = $chk->fetch();
+        if (!$existingRow) {
             echo json_encode(['ok' => false, 'msg' => 'Không tìm thấy khoản lương']); exit;
+        }
+
+        // Chỉ Giám đốc mới được sửa khoản đã duyệt
+        if (($existingRow['approval_status'] ?? 'pending') === 'approved' && $user['role'] !== 'director') {
+            echo json_encode(['ok' => false, 'msg' => 'Khoản lương đã được duyệt. Chỉ Giám đốc mới có thể sửa.']); exit;
         }
 
         $pdo->prepare("

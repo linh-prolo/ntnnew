@@ -1343,15 +1343,27 @@ class PayrollEngine
 
         $stmt = $this->pdo->prepare("
 
-            SELECT sc.component_code, sc.component_type,
+            SELECT es.id, es.component_id, es.custom_name, es.custom_name_en,
 
-                   sc.component_name, es.amount
+                   es.amount, es.component_type, es.approval_status,
+
+                   sc.component_code, sc.component_name,
+
+                   sc.component_name_en AS sc_name_en,
+
+                   sc.component_type AS sc_type
 
             FROM employee_salaries es
 
-            JOIN salary_components sc ON es.component_id = sc.id
+            LEFT JOIN salary_components sc ON es.component_id = sc.id
 
             WHERE es.user_id = ? AND es.is_active = 1
+
+            ORDER BY
+
+                CASE WHEN es.approval_status = 'approved' THEN 0 ELSE 1 END ASC,
+
+                es.id ASC
 
         ");
 
@@ -1360,15 +1372,74 @@ class PayrollEngine
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
-        $map = [];
+        // Group by component_id: keep approved if available, else pending
+        $grouped = [];  // component_id => row
+        $custom  = [];  // rows without component_id (custom entries)
 
         foreach ($rows as $r) {
 
-            $map[$r['component_code']] = (int)$r['amount'];
+            if ($r['component_id']) {
+
+                $cid = (int)$r['component_id'];
+
+                // First occurrence is preferred (approved rows come first due to ORDER BY)
+                if (!isset($grouped[$cid])) {
+
+                    $grouped[$cid] = $r;
+
+                }
+
+            } else {
+
+                $custom[] = $r;
+
+            }
 
         }
 
-        $map['all_components'] = $rows;
+        $finalRows = array_values($grouped);
+
+        // For custom rows (no component_id): prefer approved per name, else keep all
+        $customGrouped = [];
+
+        foreach ($custom as $r) {
+
+            $key = strtolower(trim($r['custom_name'] ?? ''));
+
+            if ($key === '') {
+
+                $finalRows[] = $r;
+
+            } elseif (!isset($customGrouped[$key])) {
+
+                $customGrouped[$key] = $r;
+
+            }
+
+        }
+
+        foreach ($customGrouped as $r) {
+
+            $finalRows[] = $r;
+
+        }
+
+
+        $map = [];
+
+        foreach ($finalRows as $r) {
+
+            $code = $r['component_code'] ?? null;
+
+            if ($code) {
+
+                $map[$code] = (int)$r['amount'];
+
+            }
+
+        }
+
+        $map['all_components'] = $finalRows;
 
         return $map;
 
