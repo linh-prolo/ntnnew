@@ -647,15 +647,37 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <?php endif; ?>
                 </span>
                 <?php if ($canEditSalary): ?>
-                <button type="button" class="btn btn-success btn-sm" onclick="addSalaryRow()">
-                    <i class="fas fa-plus me-1"></i>Thêm khoản
-                </button>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn btn-success btn-sm" onclick="addSalaryRow()">
+                        <i class="fas fa-plus me-1"></i>Thêm khoản
+                    </button>
+                    <?php if ($canApproveSalary && !empty($salaryRows)): ?>
+                    <div class="d-flex gap-2 align-items-center ms-2">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="selectAllSalary"
+                                   onchange="toggleAllSalary(this.checked)">
+                            <label class="form-check-label small" for="selectAllSalary">Chọn tất cả</label>
+                        </div>
+                        <button type="button" class="btn btn-success btn-sm" id="bulkSalaryBtn" disabled
+                                onclick="bulkApproveSalary()">
+                            <i class="fas fa-check-double me-1"></i>Duyệt đã chọn
+                            <span id="bulkSalaryCount" class="badge bg-white text-success ms-1">0</span>
+                        </button>
+                    </div>
+                    <?php endif; ?>
+                </div>
                 <?php endif; ?>
             </div>
             <div class="card-body p-0">
                 <table class="table table-bordered mb-0" id="salaryTable">
                     <thead class="table-dark">
                         <tr>
+                            <?php if ($canApproveSalary): ?>
+                            <th width="32" class="text-center no-print">
+                                <input type="checkbox" class="form-check-input" id="selectAllSalaryHead"
+                                       onchange="toggleAllSalary(this.checked)">
+                            </th>
+                            <?php endif; ?>
                             <?php if ($canEditSalary): ?>
                             <th width="32" class="text-center">☰</th>
                             <?php endif; ?>
@@ -668,6 +690,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </thead>
                     <tbody id="salaryBody">
                         <tr class="table-warning fw-bold" id="grossRow">
+                            <?php if ($canApproveSalary): ?><td class="no-print"></td><?php endif; ?>
                             <?php if ($canEditSalary): ?><td></td><?php endif; ?>
                             <td>
                                 Lương Tổng / <strong>Gross salary</strong>
@@ -681,6 +704,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 
                         <?php if (empty($salaryRows)): ?>
                         <tr id="emptyRow">
+                            <?php if ($canApproveSalary): ?><td class="no-print"></td><?php endif; ?>
                             <?php if ($canEditSalary): ?><td></td><?php endif; ?>
                             <td colspan="2" class="text-center text-muted py-4">
                                 <i class="fas fa-inbox fa-2x mb-2 d-block opacity-25"></i>
@@ -703,6 +727,17 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             };
                         ?>
                         <tr class="salary-row" data-row-id="<?= $row['id'] ?>" data-amount="<?= $row['amount'] ?>">
+                            <?php if ($canApproveSalary): ?>
+                            <td class="text-center no-print">
+                                <?php if (($row['approval_status'] ?? 'pending') === 'pending'): ?>
+                                <input type="checkbox" class="form-check-input salary-check"
+                                       value="<?= $row['id'] ?>"
+                                       onchange="updateSalaryBulkBtn()">
+                                <?php else: ?>
+                                <span class="text-success" title="Đã duyệt"><i class="fas fa-check-circle"></i></span>
+                                <?php endif; ?>
+                            </td>
+                            <?php endif; ?>
                             <?php if ($canEditSalary): ?>
                             <td class="text-center drag-handle" style="cursor:grab; color:#aaa;">
                                 <i class="fas fa-grip-vertical"></i>
@@ -981,7 +1016,59 @@ if (sidebarEl) {
 let salaryModal = null;
 document.addEventListener('DOMContentLoaded', () => {
     salaryModal = new bootstrap.Modal(document.getElementById('salaryModal'));
+    updateSalaryBulkBtn();
 });
+function getCheckedSalaryIds() {
+    return [...document.querySelectorAll('.salary-check:checked')].map(cb => cb.value);
+}
+function updateSalaryBulkBtn() {
+    const count = getCheckedSalaryIds().length;
+    const total = document.querySelectorAll('.salary-check').length;
+    const btn   = document.getElementById('bulkSalaryBtn');
+    if (btn) btn.disabled = count === 0;
+    const badge = document.getElementById('bulkSalaryCount');
+    if (badge) badge.textContent = count;
+    ['selectAllSalary', 'selectAllSalaryHead'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.checked       = count === total && total > 0;
+        el.indeterminate = count > 0 && count < total;
+    });
+}
+function toggleAllSalary(checked) {
+    document.querySelectorAll('.salary-check').forEach(cb => cb.checked = checked);
+    updateSalaryBulkBtn();
+}
+async function bulkApproveSalary() {
+    const ids = getCheckedSalaryIds();
+    if (ids.length === 0) { alert('Vui lòng chọn ít nhất 1 khoản lương.'); return; }
+    if (!confirm(`Duyệt ${ids.length} khoản lương đã chọn?`)) return;
+    const btn = document.getElementById('bulkSalaryBtn');
+    if (!btn) return;
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang duyệt...';
+    try {
+        const res = await fetch('/erp/api/salary/bulk_approve.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ row_ids: ids, user_id: <?= $targetId ?> })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('success', data.msg);
+            setTimeout(() => location.reload(), 700);
+        } else {
+            alert('❌ ' + data.msg);
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    } catch(e) {
+        alert('Lỗi kết nối!');
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
 function addSalaryRow() {
     document.getElementById('salaryModalTitle').textContent  = '➕ Thêm khoản lương';
     document.getElementById('sm_row_id').value               = 0;
