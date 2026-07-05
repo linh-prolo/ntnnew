@@ -3,7 +3,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
 header('Content-Type: application/json');
-requireRole('director', 'accountant');
+requireRole('director');
 
 $pdo   = getDBConnection();
 $user  = currentUser();
@@ -17,7 +17,13 @@ if (!$rowId || !$userId) {
 }
 
 // Kiểm tra khoản lương thuộc đúng user
-$chk = $pdo->prepare("SELECT id, custom_name, approval_status FROM employee_salaries WHERE id = ? AND user_id = ?");
+$chk = $pdo->prepare("
+    SELECT es.id, es.custom_name, es.approval_status,
+           sc.component_name
+    FROM employee_salaries es
+    LEFT JOIN salary_components sc ON es.component_id = sc.id
+    WHERE es.id = ? AND es.user_id = ?
+");
 $chk->execute([$rowId, $userId]);
 $row = $chk->fetch();
 
@@ -25,22 +31,25 @@ if (!$row) {
     echo json_encode(['ok' => false, 'msg' => 'Không tìm thấy khoản lương']); exit;
 }
 
-// Chỉ Giám đốc mới được xóa khoản đã duyệt
-if (($row['approval_status'] ?? 'pending') === 'approved' && $user['role'] !== 'director') {
-    echo json_encode(['ok' => false, 'msg' => 'Khoản lương đã được duyệt. Chỉ Giám đốc mới có thể xóa.']); exit;
+if (($row['approval_status'] ?? 'pending') === 'approved') {
+    echo json_encode(['ok' => false, 'msg' => 'Khoản lương này đã được duyệt rồi']); exit;
 }
 
 try {
-    // Soft delete: đánh dấu is_active = 0 thay vì xóa hẳn
-    $pdo->prepare("UPDATE employee_salaries SET is_active = 0 WHERE id = ?")
-        ->execute([$rowId]);
+    $pdo->prepare("
+        UPDATE employee_salaries
+        SET approval_status = 'approved',
+            approved_by     = ?,
+            approved_at     = NOW()
+        WHERE id = ?
+    ")->execute([$user['id'], $rowId]);
 
     echo json_encode([
         'ok'  => true,
-        'msg' => '🗑️ Đã xóa khoản lương: ' . ($row['custom_name'] ?? ''),
+        'msg' => '✅ Đã duyệt khoản lương: ' . ($row['custom_name'] ?: ($row['component_name'] ?? '')),
         'id'  => $rowId,
     ]);
 } catch (Throwable $e) {
-    error_log("delete_row.php error: " . $e->getMessage());
+    error_log("approve_row.php error: " . $e->getMessage());
     echo json_encode(['ok' => false, 'msg' => 'Lỗi server: ' . $e->getMessage()]);
 }
