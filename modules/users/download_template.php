@@ -20,7 +20,7 @@ $sheet = $spreadsheet->getActiveSheet();
 $sheet->setTitle('Template');
 
 // Dòng 1: Tiêu đề lớn
-$sheet->mergeCells('A1:N1');
+$sheet->mergeCells('A1:O1');
 $sheet->setCellValue('A1', 'DANH SÁCH NHẬP NHÂN VIÊN - TEMPLATE');
 $sheet->getStyle('A1')->applyFromArray([
     'font' => ['bold' => true, 'size' => 14, 'color' => ['argb' => 'FFFFFFFF']],
@@ -40,16 +40,17 @@ $headers = [
     'G' => 'Phân quyền *',
     'H' => 'Phòng ban',
     'I' => 'Lương cơ bản',
-    'J' => 'Phụ cấp ăn ca',
-    'K' => 'Phụ cấp trang phục',
-    'L' => 'Phụ cấp điện thoại',
-    'M' => 'Phụ cấp đi lại',
-    'N' => 'Thưởng chuyên cần',
+    'J' => 'Phụ cấp trách nhiệm',
+    'K' => 'Phụ cấp thâm niên',
+    'L' => 'Trợ cấp điện thoại',
+    'M' => 'Trợ cấp nhà ở',
+    'N' => 'Trợ cấp xăng xe, đi lại',
+    'O' => 'Chuyên cần',
 ];
 foreach ($headers as $col => $label) {
     $sheet->setCellValue($col . '2', $label);
 }
-$sheet->getStyle('A2:N2')->applyFromArray([
+$sheet->getStyle('A2:O2')->applyFromArray([
     'font' => ['bold' => true],
     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFFFF2CC']],
     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => true],
@@ -60,20 +61,20 @@ $sheet->getStyle('A2:N2')->applyFromArray([
 $sheet->getRowDimension(2)->setRowHeight(22);
 
 // Dòng 3: Mẫu 1
-$sample1 = ['NV001', 'Nguyễn Văn A', 'nguyenvana', 'password123', 'nguyenvana@company.com', '0901234567', 'employee', 'Sản xuất', 6000000, 500000, 200000, 100000, 300000, 500000];
-$cols3 = range('A', 'N');
+$sample1 = ['NV001', 'Nguyễn Văn A', 'nguyenvana', 'password123', 'nguyenvana@company.com', '0901234567', 'employee', 'Sản xuất', 6000000, 500000, 200000, 100000, 300000, 500000, 400000];
+$cols3 = range('A', 'O');
 foreach ($cols3 as $i => $col) {
     $sheet->setCellValue($col . '3', $sample1[$i]);
 }
 
 // Dòng 4: Mẫu 2
-$sample2 = ['NV002', 'Trần Thị B', 'tranthib', 'password456', 'tranthib@company.com', '0912345678', 'manager', 'Kế toán', 8000000, 500000, 200000, 200000, 300000, 500000];
+$sample2 = ['NV002', 'Trần Thị B', 'tranthib', 'password456', 'tranthib@company.com', '0912345678', 'manager', 'Kế toán', 8000000, 700000, 300000, 200000, 500000, 600000, 400000];
 foreach ($cols3 as $i => $col) {
     $sheet->setCellValue($col . '4', $sample2[$i]);
 }
 
 // Style cho dữ liệu mẫu
-$sheet->getStyle('A3:N4')->applyFromArray([
+$sheet->getStyle('A3:O4')->applyFromArray([
     'borders' => [
         'allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['argb' => 'FFCCCCCC']],
     ],
@@ -83,7 +84,7 @@ $sheet->getStyle('A3:N4')->applyFromArray([
 $colWidths = [
     'A' => 15, 'B' => 22, 'C' => 18, 'D' => 16,
     'E' => 28, 'F' => 16, 'G' => 16, 'H' => 18,
-    'I' => 16, 'J' => 18, 'K' => 20, 'L' => 20, 'M' => 16, 'N' => 20,
+    'I' => 16, 'J' => 20, 'K' => 20, 'L' => 20, 'M' => 18, 'N' => 24, 'O' => 16,
 ];
 foreach ($colWidths as $col => $width) {
     $sheet->getColumnDimension($col)->setWidth($width);
@@ -120,11 +121,12 @@ $guideData = [
     ['G', 'Phân quyền *', 'Bắt buộc. Nhập một trong các giá trị: director, accountant, manager, warehouse, production, employee'],
     ['H', 'Phòng ban', 'Không bắt buộc. Nhập tên phòng ban chính xác. Để trống nếu chưa xác định.'],
     ['I', 'Lương cơ bản', 'Không bắt buộc. Nhập số tiền (VNĐ). Để trống hoặc 0 nếu không có.'],
-    ['J', 'Phụ cấp ăn ca', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
-    ['K', 'Phụ cấp trang phục', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
-    ['L', 'Phụ cấp điện thoại', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
-    ['M', 'Phụ cấp đi lại', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
-    ['N', 'Thưởng chuyên cần', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
+    ['J', 'Phụ cấp trách nhiệm', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
+    ['K', 'Phụ cấp thâm niên', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
+    ['L', 'Trợ cấp điện thoại', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
+    ['M', 'Trợ cấp nhà ở', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
+    ['N', 'Trợ cấp xăng xe, đi lại', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
+    ['O', 'Chuyên cần', 'Không bắt buộc. Nhập số tiền (VNĐ).'],
 ];
 $row = 4;
 foreach ($guideData as $gRow) {

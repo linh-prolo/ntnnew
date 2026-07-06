@@ -81,19 +81,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Mapping cột lương: cột Excel => component_code
     $salaryColMap = [
-        'I' => 'basic_salary',
-        'J' => 'meal',
-        'K' => 'clothes',
+        'I' => 'basic',
+        'J' => 'responsibility',
+        'K' => 'seniority',
         'L' => 'phone',
-        'M' => 'transport',
-        'N' => 'attendance_bonus',
+        'M' => 'housing',
+        'N' => 'transport',
+        'O' => 'attendance_bonus',
     ];
 
     $processed = true;
 
     // Xử lý từng dòng (bỏ qua 2 dòng đầu)
     for ($rowNum = 3; $rowNum <= $highRow; $rowNum++) {
-        // Đọc các cột A-N
+        // Đọc các cột A-O
         $employee_code = trim((string)($sheet->getCell('A' . $rowNum)->getValue() ?? ''));
         $full_name     = trim((string)($sheet->getCell('B' . $rowNum)->getValue() ?? ''));
         $username      = trim((string)($sheet->getCell('C' . $rowNum)->getValue() ?? ''));
