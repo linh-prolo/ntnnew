@@ -17,44 +17,50 @@ foreach ([
 }
 
 // ── Lấy ca làm việc của user tại ngày cụ thể ────────────────────────────────
-function attGetShiftAtDate(PDO $pdo, int $userId, string $date): ?array {
-    try {
-        $st = $pdo->prepare("
-            SELECT ws.* FROM employee_shifts es
-            JOIN work_shifts ws ON es.shift_id = ws.id
-            WHERE es.user_id = ? AND es.effective_date <= ?
-              AND (es.end_date IS NULL OR es.end_date >= ?)
-            ORDER BY es.effective_date DESC LIMIT 1
-        ");
-        $st->execute([$userId, $date, $date]);
-        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
-    } catch (Throwable $e) {
-        return null;
+if (!function_exists('attGetShiftAtDate')) {
+    function attGetShiftAtDate(PDO $pdo, int $userId, string $date): ?array {
+        try {
+            $st = $pdo->prepare("
+                SELECT ws.* FROM employee_shifts es
+                JOIN work_shifts ws ON es.shift_id = ws.id
+                WHERE es.user_id = ? AND es.effective_date <= ?
+                  AND (es.end_date IS NULL OR es.end_date >= ?)
+                ORDER BY es.effective_date DESC LIMIT 1
+            ");
+            $st->execute([$userId, $date, $date]);
+            return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 }
 
 // ── Tính mốc thời gian reset cho log mở (Unix timestamp) ────────────────────
 // Ca đêm (is_night_shift=1): reset sau 11:59:59 ngày hôm sau
 // Ca ngày / hành chính:     reset sau 23:59:59 của work_date
-function attGetResetThreshold(?array $shift, string $workDate): int {
-    if ((int)($shift['is_night_shift'] ?? 0) === 1) {
-        return (int)strtotime($workDate . ' +1 day 11:59:59');
+if (!function_exists('attGetResetThreshold')) {
+    function attGetResetThreshold(?array $shift, string $workDate): int {
+        if ((int)($shift['is_night_shift'] ?? 0) === 1) {
+            return (int)strtotime($workDate . ' +1 day 11:59:59');
+        }
+        return (int)strtotime($workDate . ' 23:59:59');
     }
-    return (int)strtotime($workDate . ' 23:59:59');
 }
 
 // ── Đánh dấu log mở là thiếu check-out (không điền check_out giả) ─────────
-function attMarkMissingCheckout(PDO $pdo, int $logId): void {
-    try {
-        $pdo->prepare("
-            UPDATE attendance_logs
-            SET missing_checkout = 1,
-                missing_checkout_note = 'Quên chấm công ra (tự động đánh dấu)',
-                auto_closed_at = NOW()
-            WHERE id = ? AND check_out IS NULL
-        ")->execute([$logId]);
-    } catch (Throwable $e) {
-        error_log('attMarkMissingCheckout failed: ' . $e->getMessage());
+if (!function_exists('attMarkMissingCheckout')) {
+    function attMarkMissingCheckout(PDO $pdo, int $logId): void {
+        try {
+            $pdo->prepare("
+                UPDATE attendance_logs
+                SET missing_checkout = 1,
+                    missing_checkout_note = 'Quên chấm công ra (tự động đánh dấu)',
+                    auto_closed_at = NOW()
+                WHERE id = ? AND check_out IS NULL
+            ")->execute([$logId]);
+        } catch (Throwable $e) {
+            error_log('attMarkMissingCheckout failed: ' . $e->getMessage());
+        }
     }
 }
 

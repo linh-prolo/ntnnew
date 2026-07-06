@@ -543,7 +543,10 @@ $content .= '</div>';
     </div>
 
     <!-- ══ CHẾ ĐỘ TỔNG HỢP ══ -->
-    <?php elseif ($viewMode === 'summary'): ?>
+    <?php elseif ($viewMode === 'summary'):
+    // Số cột trong bảng tổng hợp – cập nhật đây khi thêm/xóa cột
+    $summaryColCount = 17;
+    ?>
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white fw-bold d-flex justify-content-between">
             <span>📋 Bảng tổng hợp tháng <?= $viewMonth ?>/<?= $viewYear ?></span>
@@ -589,7 +592,7 @@ $content .= '</div>';
                             $prevDept = $emp['dept_name'];
                     ?>
                     <tr class="table-secondary">
-                        <td colspan="17" class="fw-bold small py-1 ps-3">
+                        <td colspan="<?= $summaryColCount ?>" class="fw-bold small py-1 ps-3">
                             🏢 <?= htmlspecialchars($emp['dept_name'] ?? 'Chưa phân phòng ban') ?>
                         </td>
                     </tr>
