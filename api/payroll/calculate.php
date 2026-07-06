@@ -3,6 +3,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/payroll/engine/PayrollEngine.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/payroll/engine/ManualPayrollEngine.php';
 header('Content-Type: application/json');
 requireRole('director', 'accountant');
 
@@ -33,13 +34,27 @@ $users = $pdo->query("
     ORDER BY full_name
 ")->fetchAll(PDO::FETCH_COLUMN);
 
-$engine  = new PayrollEngine($pdo);
-$success = 0;
-$errors  = [];
+$engine       = new PayrollEngine($pdo);
+$manualEngine = new ManualPayrollEngine($pdo);
+$success      = 0;
+$manualCount  = 0;
+$errors       = [];
+
+// Preload tất cả user_id có manual_attendance trong kỳ này (tránh N+1 query)
+$payPeriodStr = sprintf('%04d-%02d', (int)$period['period_year'], (int)$period['period_month']);
+$manualUsers  = $pdo->prepare("SELECT user_id FROM manual_attendance WHERE pay_period = ?");
+$manualUsers->execute([$payPeriodStr]);
+$manualUserSet = array_flip($manualUsers->fetchAll(PDO::FETCH_COLUMN));
 
 foreach ($users as $uid) {
     try {
-        $data = $engine->calculate($periodId, (int)$uid);
+        $useManual = isset($manualUserSet[(int)$uid]);
+        if ($useManual) {
+            $data = $manualEngine->calculate($periodId, (int)$uid);
+            $manualCount++;
+        } else {
+            $data = $engine->calculate($periodId, (int)$uid);
+        }
 
         // Kiểm tra slip đã tồn tại chưa
         $chk = $pdo->prepare("SELECT id, manually_adjusted FROM payroll_slips WHERE period_id = ? AND user_id = ?");
@@ -77,9 +92,12 @@ foreach ($users as $uid) {
 }
 
 echo json_encode([
-    'ok'      => true,
-    'success' => $success,
-    'errors'  => $errors,
-    'msg'     => "✅ Đã tính lương cho $success nhân viên"
-                . (count($errors) ? ', có ' . count($errors) . ' lỗi' : ''),
+    'ok'           => true,
+    'success'      => $success,
+    'manual_count' => $manualCount,
+    'auto_count'   => $success - $manualCount,
+    'errors'       => $errors,
+    'msg'          => "✅ Đã tính lương cho $success nhân viên"
+                    . ($manualCount > 0 ? " ($manualCount tính tay, " . ($success - $manualCount) . " tự động)" : "")
+                    . (count($errors) ? ', có ' . count($errors) . ' lỗi' : ''),
 ]);
