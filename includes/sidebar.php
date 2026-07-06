@@ -17,7 +17,7 @@ $activeGroup = '';
 if (isGroupActive(['/modules/users/profile', '/modules/users/change_password'])) $activeGroup = 'personal';
 elseif (isGroupActive(['/attendance/', '/leave_request', '/ot_request', '/all_attendance',
                         '/leave_manage', '/ot_manage', '/shift_schedule', '/shift_assign', '/shift_setup',
-                        '/location_settings',
+                        '/location_settings', '/manual_attendance',
                         '/payroll/holidays'])) $activeGroup = 'attendance';
 elseif (isGroupActive(['/payroll/'])) $activeGroup = 'payroll';
 elseif (isGroupActive(['/master/'])) $activeGroup = 'master';
@@ -65,6 +65,10 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
       <ul class="sidebar-submenu" id="grp-attendance">
         <li><a class="nav-link <?= isActive('/attendance/index') ?>" href="/erp/modules/attendance/index.php">
           <i class="fas fa-calendar-check"></i><span>CHẤM CÔNG</span></a></li>
+        <?php if (hasRole('director','accountant','manager','production')): ?>
+        <li><a class="nav-link <?= isActive('/manual_attendance') ?>" href="/erp/modules/attendance/manual_attendance.php">
+          <i class="fas fa-file-import"></i><span>CHẤM CÔNG TAY</span></a></li>
+        <?php endif; ?>
         <?php if (hasRole('employee','production','warehouse')): ?>
         <li><a class="nav-link <?= isActive('/leave_request') ?>" href="/erp/modules/attendance/leave_request.php">
           <i class="fas fa-calendar-minus"></i><span>Xin nghỉ phép</span></a></li>
