@@ -78,25 +78,25 @@ class ManualPayrollEngine
         }
 
         // ── Bước 2: Lấy các khoản lương cơ bản ──────────────────────────
-        $basicSalary         = (int)($salary['basic']                    ?? 0);
-        $mealAllow           = (int)($salary['meal']                     ?? 0);
-        $clothesAllow        = (int)($salary['clothes']                  ?? 0);
-        $phoneAllow          = (int)($salary['phone']                    ?? 0);
-        $transportAllow      = (int)($salary['transport']                ?? 0);
-        $housingAllow        = (int)($salary['housing']                  ?? 0);
-        $performBonus        = (int)($salary['performance']              ?? 0);
-        $responsibilityAllow = (int)($salary['responsibility_allowance'] ?? 0);
-        $seniorityAllow      = (int)($salary['seniority_allowance']      ?? 0);
+        $basicSalary    = (int)($salary['basic']       ?? 0);
+        $mealAllow      = (int)($salary['meal']        ?? 0);
+        $clothesAllow   = (int)($salary['clothes']     ?? 0);
+        $phoneAllow     = (int)($salary['phone']       ?? 0);
+        $transportAllow = (int)($salary['transport']   ?? 0);
+        $housingAllow   = (int)($salary['housing']     ?? 0);
+        $performBonus   = (int)($salary['performance'] ?? 0);
 
-        // ── FIX: Lấy attendance_bonus từ employee_salaries trực tiếp ─────
-        // Không dùng $salary['attendance_bonus'] vì có thể bị miss nếu
-        // component_code không khớp. Query trực tiếp để chắc chắn.
+        // ── FIX: component_code trong DB là 'responsibility' và 'seniority'
+        //         (không phải 'responsibility_allowance' / 'seniority_allowance')
+        $responsibilityAllow = (int)($salary['responsibility'] ?? $salary['responsibility_allowance'] ?? 0);
+        $seniorityAllow      = (int)($salary['seniority']      ?? $salary['seniority_allowance']      ?? 0);
+
+        // Lấy attendance_bonus trực tiếp từ DB để tránh miss
         $attendBonus = $this->getAttendanceBonus($userId);
 
         $workingDays = (int)$period['working_days'];
 
         // ── Bước 3: Tính lương theo giờ ──────────────────────────────────
-        // Lương/giờ tính OT = (basic + PC trách nhiệm + PC thâm niên) / working_days / 8
         $otBase        = $basicSalary + $responsibilityAllow + $seniorityAllow;
         $basicPerDay   = $workingDays > 0 ? (int)round($otBase / $workingDays) : 0;
         $salaryPerHour = (int)round($basicPerDay / self::WORK_HOURS_PER_DAY);
@@ -109,14 +109,13 @@ class ManualPayrollEngine
         $insuranceLeaveDays = (float)($manual['insurance_leave_days'] ?? 0);
         $personalLeaveDays  = (float)($manual['personal_leave_days']  ?? 0);
 
-        // Tổng ngày hưởng lương
         $totalPaidDays = $actualWorkdays + $paidLeaveDays + $holidayDays
                        + $insuranceLeaveDays + $personalLeaveDays;
 
         // ── Bước 4: Tính lương cơ bản thực nhận ──────────────────────────
         $totalSalaryNoAttend = 0;
         foreach ($salary['all_components'] as $comp) {
-            if ($comp['component_code'] === 'attendance_bonus') continue;
+            if (in_array($comp['component_code'], ['attendance_bonus', 'attendance'], true)) continue;
             if (in_array($comp['component_type'], ['earning', 'bonus']))
                 $totalSalaryNoAttend += (int)$comp['amount'];
         }
@@ -136,12 +135,10 @@ class ManualPayrollEngine
         $hours_270 = (float)($manual['hours_270'] ?? 0);
         $hours_390 = (float)($manual['hours_390'] ?? 0);
 
-        // Phụ trội ca đêm = giờ_130 × salaryPerHour × 30%
         $nightShiftBonus = $hours_130 > 0
             ? (int)round($hours_130 * $salaryPerHour * 0.30)
             : 0;
 
-        // OT amounts
         $otWeekdayAmt      = (int)round($hours_150 * $salaryPerHour * 1.5);
         $otHolidayAmt      = (int)round($hours_200 * $salaryPerHour * 2.0);
         $otWeekendAmt      = (int)round($hours_300 * $salaryPerHour * 3.0);
@@ -160,7 +157,6 @@ class ManualPayrollEngine
             ? min(1.0, $actualWorkdays / $workingDays)
             : 0.0;
 
-        // Ăn ca OT: tổng giờ OT / 3 (làm tròn xuống) × 14.000đ
         $totalOtHours = $hours_150 + $hours_200 + $hours_300
                       + $hours_210 + $hours_270 + $hours_390;
         $otMealDays   = (int)floor($totalOtHours / self::OT_MEAL_MIN_HOURS);
@@ -175,21 +171,21 @@ class ManualPayrollEngine
         $seniorityReceived      = (int)round($seniorityAllow      * $allowanceRatio);
         $performReceived        = (int)round($performBonus        * $allowanceRatio);
 
-        // ── FIX: Điều kiện chuyên cần ─────────────────────────────────────
-        // Đủ điều kiện khi: tỷ lệ ngày >= 100% VÀ không có nghỉ không phép
-        // Dùng so sánh float mềm (< 0.01) thay vì === 0.0 để tránh lỗi float precision
+        // Điều kiện chuyên cần: đủ ngày VÀ không nghỉ không phép
         $attendEligible = ($allowanceRatio >= 1.0 && $unpaidLeaveDays < 0.01);
         $attendReceived = ($attendEligible && $attendBonus > 0) ? $attendBonus : 0;
 
-        // Other components
+        // ── FIX: excludedCodes dùng đúng component_code thực tế trong DB ──
+        // Hỗ trợ cả 2 dạng: 'responsibility'/'seniority' VÀ 'responsibility_allowance'/'seniority_allowance'
         $otherComponentsReceived = 0;
         $excludedCodes = [
             'basic', 'meal', 'clothes', 'phone', 'transport', 'housing',
-            'responsibility_allowance', 'seniority_allowance',
-            'performance', 'attendance_bonus',
+            'responsibility', 'responsibility_allowance',   // hỗ trợ cả 2 dạng
+            'seniority',      'seniority_allowance',        // hỗ trợ cả 2 dạng
+            'performance', 'attendance_bonus', 'attendance',
         ];
         foreach ($salary['all_components'] as $comp) {
-            if (in_array($comp['component_code'], $excludedCodes)) continue;
+            if (in_array($comp['component_code'], $excludedCodes, true)) continue;
             if (!in_array($comp['component_type'], ['earning', 'bonus'])) continue;
             $otherComponentsReceived += (int)round((int)$comp['amount'] * $allowanceRatio);
         }
@@ -334,24 +330,20 @@ class ManualPayrollEngine
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Private helpers (độc lập với PayrollEngine)
+    // Private helpers
     // ──────────────────────────────────────────────────────────────────────
 
-    /**
-     * Lấy giá trị thưởng chuyên cần trực tiếp từ DB.
-     * Query rõ ràng theo component_code = 'attendance_bonus' để tránh
-     * trường hợp getSalaryComponents() không map được do custom_name.
-     */
     private function getAttendanceBonus(int $userId): int
     {
         try {
+            // Ưu tiên approved trước
             $stmt = $this->pdo->prepare("
                 SELECT es.amount
                 FROM employee_salaries es
                 JOIN salary_components sc ON es.component_id = sc.id
                 WHERE es.user_id = ?
                   AND es.is_active = 1
-                  AND sc.component_code = 'attendance_bonus'
+                  AND sc.component_code IN ('attendance_bonus', 'attendance')
                   AND es.approval_status = 'approved'
                 ORDER BY es.id DESC
                 LIMIT 1
@@ -359,7 +351,7 @@ class ManualPayrollEngine
             $stmt->execute([$userId]);
             $val = $stmt->fetchColumn();
 
-            // Nếu không có approved, thử pending
+            // Fallback: pending
             if ($val === false) {
                 $stmt2 = $this->pdo->prepare("
                     SELECT es.amount
@@ -367,7 +359,7 @@ class ManualPayrollEngine
                     JOIN salary_components sc ON es.component_id = sc.id
                     WHERE es.user_id = ?
                       AND es.is_active = 1
-                      AND sc.component_code = 'attendance_bonus'
+                      AND sc.component_code IN ('attendance_bonus', 'attendance')
                     ORDER BY es.id DESC
                     LIMIT 1
                 ");
@@ -419,7 +411,6 @@ class ManualPayrollEngine
         $stmt->execute([$userId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Group by component_id: keep approved if available, else pending
         $grouped = [];
         $custom  = [];
 
