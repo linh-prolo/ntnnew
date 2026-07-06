@@ -9,6 +9,15 @@ $pdo  = getDBConnection();
 $user = currentUser();
 $isDirector = hasRole('director');
 
+// ── Schema bootstrap: thêm cột cảnh báo thiếu check-out nếu chưa tồn tại ──
+foreach ([
+    "ALTER TABLE attendance_logs ADD COLUMN missing_checkout TINYINT(1) NOT NULL DEFAULT 0",
+    "ALTER TABLE attendance_logs ADD COLUMN missing_checkout_note VARCHAR(255) NULL",
+    "ALTER TABLE attendance_logs ADD COLUMN auto_closed_at DATETIME NULL",
+] as $_sql) {
+    try { $pdo->exec($_sql); } catch (Throwable $_e) { /* cột đã tồn tại */ }
+}
+
 // ... (toàn bộ PHP query giữ nguyên)
 
 // ── Tham số lọc ──────────────────────────────────────────────────────────
@@ -132,6 +141,7 @@ function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $
         'total_hours'=>0,
         'ot_hours'=>0,'ot_weekday'=>0,'ot_weekend'=>0,'ot_holiday'=>0,
         'sunday_work'=>0,
+        'missing_checkout_count'=>0,
     ];
     for ($d = 1; $d <= $daysInMon; $d++) {
         $dateStr  = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $d);
@@ -168,6 +178,9 @@ function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $
             if ($att['early_leave']) {
                 $stats['early_count']++;
                 $stats['early_minutes'] += (int)($att['early_leave_minutes'] ?? 0);
+            }
+            if (!empty($att['missing_checkout'])) {
+                $stats['missing_checkout_count']++;
             }
         } else {
             $stats['absent_days']++;
@@ -332,6 +345,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             ['leg-early', '🔚 Về sớm'],
             ['leg-leave', '🏖️ Nghỉ phép'],
             ['leg-absent','✗ Vắng'],
+            ['leg-missing-co', '⚠️ Quên chấm ra'],
             ['leg-loc-ok',      '📍 Tại công ty'],
             ['leg-loc-outside', '📍 Ngoài phạm vi'],
             ['leg-ot',    '🌙 OT'],
@@ -452,18 +466,21 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             } elseif ($att && $att['check_in']) {
                                 $isLate    = $att['is_late'];
                                 $isEarly   = $att['early_leave'];
+                                $isMissingCO = !empty($att['missing_checkout']);
                                 $checkIn   = date('H:i', strtotime($att['check_in']));
                                 $checkOut  = $att['check_out'] ? date('H:i', strtotime($att['check_out'])) : '?';
 
                                 if ($isLate && $isEarly)      $bg = '#fff7e6';
                                 elseif ($isLate)              $bg = '#fffbf0';
                                 elseif ($isEarly)             $bg = '#fdf2f8';
+                                elseif ($isMissingCO)         $bg = '#fff8f0';
                                 else                          $bg = '#f0fff4';
 
                                 $title = "Vào: $checkIn | Ra: $checkOut";
-                                if ($isLate)  $title .= " | Trễ: {$att['late_minutes']}p";
-                                if ($isEarly) $title .= " | Về sớm: {$att['early_leave_minutes']}p";
-                                if ($ot)      $title .= " | OT: {$ot['hours']}h";
+                                if ($isLate)       $title .= " | Trễ: {$att['late_minutes']}p";
+                                if ($isEarly)      $title .= " | Về sớm: {$att['early_leave_minutes']}p";
+                                if ($ot)           $title .= " | OT: {$ot['hours']}h";
+                                if ($isMissingCO)  $title .= " | ⚠️ Quên chấm ra";
                                 $locFlag = $att['check_in_location_flag'] ?? 'unknown';
                                 $locDot = match ($locFlag) {
                                     'verified' => '<span style="font-size:7px;color:#16a34a;" title="Tại công ty">●</span>',
@@ -473,7 +490,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 };
 
                                 $content = '<div style="font-size:9px;line-height:1.4;">';
-if ($isLate && $isEarly) {
+if ($isMissingCO) {
+    $content .= '<span style="color:#f59e0b;font-weight:bold;" title="Quên chấm ra">⚠️</span><br>';
+} elseif ($isLate && $isEarly) {
     $content .= '<span style="color:#d97706;">⚡🔚</span><br>';
 } elseif ($isLate) {
     $content .= '<span style="color:#d97706;font-weight:bold;">⚡</span><br>';
@@ -483,7 +502,7 @@ if ($isLate && $isEarly) {
     $content .= '<span style="color:#16a34a;font-weight:bold;">✓</span><br>';
 }
 $content .= '<span style="color:#333;">' . $checkIn . '</span><br>';
-$checkOutColor = $att['check_out'] ? '#666' : '#dc2626';
+$checkOutColor = $att['check_out'] ? '#666' : ($isMissingCO ? '#f59e0b' : '#dc2626');
 $content .= '<span style="color:' . $checkOutColor . ';">' . $checkOut . '</span>';
 $content .= $locDot ? '<br>' . $locDot : '';
 if ($ot) $content .= '<br><span style="color:#6f42c1;font-size:8px;">OT</span>';
@@ -524,7 +543,10 @@ $content .= '</div>';
     </div>
 
     <!-- ══ CHẾ ĐỘ TỔNG HỢP ══ -->
-    <?php elseif ($viewMode === 'summary'): ?>
+    <?php elseif ($viewMode === 'summary'):
+    // Số cột trong bảng tổng hợp – cập nhật đây khi thêm/xóa cột
+    $summaryColCount = 17;
+    ?>
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white fw-bold d-flex justify-content-between">
             <span>📋 Bảng tổng hợp tháng <?= $viewMonth ?>/<?= $viewYear ?></span>
@@ -552,6 +574,7 @@ $content .= '</div>';
                             <th class="text-center">OT lễ</th>
                             <th class="text-center fw-bold">Tổng OT</th>
                             <th class="text-center">Làm CN</th>
+                            <th class="text-center text-warning fw-bold">⚠️ Quên ra</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -560,7 +583,8 @@ $content .= '</div>';
                     $grandTotals = array_fill_keys([
                         'work_days','total_hours','leave_days','absent_days',
                         'late_count','late_minutes','early_count','early_minutes',
-                        'ot_hours','ot_weekday','ot_weekend','ot_holiday','sunday_work'
+                        'ot_hours','ot_weekday','ot_weekend','ot_holiday','sunday_work',
+                        'missing_checkout_count',
                     ], 0);
 
                     foreach ($employees as $emp):
@@ -568,7 +592,7 @@ $content .= '</div>';
                             $prevDept = $emp['dept_name'];
                     ?>
                     <tr class="table-secondary">
-                        <td colspan="16" class="fw-bold small py-1 ps-3">
+                        <td colspan="<?= $summaryColCount ?>" class="fw-bold small py-1 ps-3">
                             🏢 <?= htmlspecialchars($emp['dept_name'] ?? 'Chưa phân phòng ban') ?>
                         </td>
                     </tr>
@@ -640,6 +664,11 @@ $content .= '</div>';
                         <td class="text-center small text-muted">
                             <?= $st['sunday_work'] > 0 ? $st['sunday_work'] . ' ngày' : '—' ?>
                         </td>
+                        <td class="text-center small">
+                            <?= $st['missing_checkout_count'] > 0
+                                ? '<span class="badge bg-warning text-dark">' . $st['missing_checkout_count'] . ' ngày</span>'
+                                : '<span class="text-muted">—</span>' ?>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -660,6 +689,7 @@ $content .= '</div>';
                             <td class="text-center"><?= number_format($grandTotals['ot_holiday'],1) ?>h</td>
                             <td class="text-center text-warning"><?= number_format($grandTotals['ot_hours'],1) ?>h</td>
                             <td class="text-center"><?= $grandTotals['sunday_work'] ?></td>
+                            <td class="text-center text-warning"><?= $grandTotals['missing_checkout_count'] ?: '—' ?></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -704,6 +734,7 @@ $content .= '</div>';
 .leg-early  { background:#fdf2f8; color:#9333ea; border:1px solid #e9d5ff; }
 .leg-leave  { background:#e8f4fd; color:#0284c7; border:1px solid #bae6fd; }
 .leg-absent { background:#fff5f5; color:#dc2626; border:1px solid #fecaca; }
+.leg-missing-co { background:#fff8f0; color:#b45309; border:1px solid #fcd34d; }
 .leg-loc-ok      { background:#f0fff4; color:#16a34a; border:1px solid #bbf7d0; }
 .leg-loc-outside { background:#fffbf0; color:#d97706; border:1px solid #fde68a; }
 .leg-ot     { background:#f5f3ff; color:#6f42c1; border:1px solid #ddd6fe; }
