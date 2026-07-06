@@ -67,7 +67,7 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
           <i class="fas fa-calendar-check"></i><span>CHẤM CÔNG</span></a></li>
         <?php if (hasRole('director','accountant','manager','production')): ?>
         <li><a class="nav-link <?= isActive('/manual_attendance') ?>" href="/erp/modules/attendance/manual_attendance.php">
-          <i class="fas fa-file-import"></i><span>Chấm công tay</span></a></li>
+          <i class="fas fa-file-import"></i><span>CHẤM CÔNG TAY</span></a></li>
         <?php endif; ?>
         <?php if (hasRole('employee','production','warehouse')): ?>
         <li><a class="nav-link <?= isActive('/leave_request') ?>" href="/erp/modules/attendance/leave_request.php">

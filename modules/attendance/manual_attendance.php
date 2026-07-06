@@ -429,7 +429,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
 
     <div class="d-flex gap-2 mb-4">
-        <a href="/erp/modules/attendance/manual_attendance.php?month=<?= (int)explode('-', $summary['pay_period'])[1] ?>&year=<?= (int)explode('-', $summary['pay_period'])[0] ?>"
+        <?php
+        [$summaryYear, $summaryMonth] = explode('-', $summary['pay_period']);
+        ?>
+        <a href="/erp/modules/attendance/manual_attendance.php?month=<?= (int)$summaryMonth ?>&year=<?= (int)$summaryYear ?>"
            class="btn btn-success">
             <i class="fas fa-list me-2"></i>Xem dữ liệu kỳ này
         </a>
