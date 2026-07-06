@@ -172,7 +172,7 @@ class ManualPayrollEngine
         $performReceived        = (int)round($performBonus        * $allowanceRatio);
 
         // Chuyên cần: chỉ được nếu đủ ngày và không có nghỉ không phép
-        $attendEligible = ($allowanceRatio >= 1.0 && $unpaidLeaveDays == 0);
+        $attendEligible = ($allowanceRatio >= 1.0 && $unpaidLeaveDays === 0.0);
         $attendReceived = $attendEligible ? $attendBonus : 0;
 
         // Other components

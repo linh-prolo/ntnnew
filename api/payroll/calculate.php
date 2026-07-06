@@ -40,14 +40,15 @@ $success      = 0;
 $manualCount  = 0;
 $errors       = [];
 
+// Preload tất cả user_id có manual_attendance trong kỳ này (tránh N+1 query)
+$payPeriodStr = sprintf('%04d-%02d', (int)$period['period_year'], (int)$period['period_month']);
+$manualUsers  = $pdo->prepare("SELECT user_id FROM manual_attendance WHERE pay_period = ?");
+$manualUsers->execute([$payPeriodStr]);
+$manualUserSet = array_flip($manualUsers->fetchAll(PDO::FETCH_COLUMN));
+
 foreach ($users as $uid) {
     try {
-        $useManual = ManualPayrollEngine::hasManualData(
-            $pdo,
-            (int)$uid,
-            (int)$period['period_year'],
-            (int)$period['period_month']
-        );
+        $useManual = isset($manualUserSet[(int)$uid]);
         if ($useManual) {
             $data = $manualEngine->calculate($periodId, (int)$uid);
             $manualCount++;
