@@ -3,6 +3,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/payroll/engine/PayrollEngine.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/payroll/engine/ManualPayrollEngine.php';
 header('Content-Type: application/json');
 requireRole('director', 'accountant');
 
@@ -33,13 +34,26 @@ $users = $pdo->query("
     ORDER BY full_name
 ")->fetchAll(PDO::FETCH_COLUMN);
 
-$engine  = new PayrollEngine($pdo);
-$success = 0;
-$errors  = [];
+$engine       = new PayrollEngine($pdo);
+$manualEngine = new ManualPayrollEngine($pdo);
+$success      = 0;
+$manualCount  = 0;
+$errors       = [];
 
 foreach ($users as $uid) {
     try {
-        $data = $engine->calculate($periodId, (int)$uid);
+        $useManual = ManualPayrollEngine::hasManualData(
+            $pdo,
+            (int)$uid,
+            (int)$period['period_year'],
+            (int)$period['period_month']
+        );
+        if ($useManual) {
+            $data = $manualEngine->calculate($periodId, (int)$uid);
+            $manualCount++;
+        } else {
+            $data = $engine->calculate($periodId, (int)$uid);
+        }
 
         // Kiểm tra slip đã tồn tại chưa
         $chk = $pdo->prepare("SELECT id, manually_adjusted FROM payroll_slips WHERE period_id = ? AND user_id = ?");
@@ -77,9 +91,12 @@ foreach ($users as $uid) {
 }
 
 echo json_encode([
-    'ok'      => true,
-    'success' => $success,
-    'errors'  => $errors,
-    'msg'     => "✅ Đã tính lương cho $success nhân viên"
-                . (count($errors) ? ', có ' . count($errors) . ' lỗi' : ''),
+    'ok'           => true,
+    'success'      => $success,
+    'manual_count' => $manualCount,
+    'auto_count'   => $success - $manualCount,
+    'errors'       => $errors,
+    'msg'          => "✅ Đã tính lương cho $success nhân viên"
+                    . ($manualCount > 0 ? " ($manualCount tính tay, " . ($success - $manualCount) . " tự động)" : "")
+                    . (count($errors) ? ', có ' . count($errors) . ' lỗi' : ''),
 ]);
