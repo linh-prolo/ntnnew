@@ -9,6 +9,61 @@ $user = currentUser();
 $pdo = getDBConnection();
 $errors = [];
 
+// ── Schema bootstrap: thêm cột cảnh báo thiếu check-out nếu chưa tồn tại ──
+foreach ([
+    "ALTER TABLE attendance_logs ADD COLUMN missing_checkout TINYINT(1) NOT NULL DEFAULT 0",
+    "ALTER TABLE attendance_logs ADD COLUMN missing_checkout_note VARCHAR(255) NULL",
+    "ALTER TABLE attendance_logs ADD COLUMN auto_closed_at DATETIME NULL",
+] as $_sql) {
+    try { $pdo->exec($_sql); } catch (Throwable $_e) { /* cột đã tồn tại */ }
+}
+
+// ── Lấy ca làm việc của user tại ngày cụ thể ────────────────────────────────
+if (!function_exists('attGetShiftAtDate')) {
+    function attGetShiftAtDate(PDO $pdo, int $userId, string $date): ?array {
+        try {
+            $st = $pdo->prepare("
+                SELECT ws.* FROM employee_shifts es
+                JOIN work_shifts ws ON es.shift_id = ws.id
+                WHERE es.user_id = ? AND es.effective_date <= ?
+                  AND (es.end_date IS NULL OR es.end_date >= ?)
+                ORDER BY es.effective_date DESC LIMIT 1
+            ");
+            $st->execute([$userId, $date, $date]);
+            return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+}
+
+// ── Tính mốc thời gian reset cho log mở (Unix timestamp) ────────────────────
+if (!function_exists('attGetResetThreshold')) {
+    function attGetResetThreshold(?array $shift, string $workDate): int {
+        if ((int)($shift['is_night_shift'] ?? 0) === 1) {
+            return (int)strtotime($workDate . ' +1 day 11:59:59');
+        }
+        return (int)strtotime($workDate . ' 23:59:59');
+    }
+}
+
+// ── Đánh dấu log mở là thiếu check-out ──────────────────────────────────────
+if (!function_exists('attMarkMissingCheckout')) {
+    function attMarkMissingCheckout(PDO $pdo, int $logId): void {
+        try {
+            $pdo->prepare("
+                UPDATE attendance_logs
+                SET missing_checkout = 1,
+                    missing_checkout_note = 'Quên chấm công ra (tự động đánh dấu)',
+                    auto_closed_at = NOW()
+                WHERE id = ? AND check_out IS NULL
+            ")->execute([$logId]);
+        } catch (Throwable $e) {
+            error_log('attMarkMissingCheckout failed: ' . $e->getMessage());
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
         setFlash('danger', 'Yêu cầu không hợp lệ. Vui lòng thử lại.');
@@ -197,6 +252,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     };
 
     if ($action === 'check_in') {
+        // ── Kiểm tra log mở từ ngày trước – áp dụng quy tắc reset theo ca ───
+        try {
+            $priorOpenStmt = $pdo->prepare("
+                SELECT * FROM attendance_logs
+                WHERE user_id = ?
+                  AND check_in IS NOT NULL
+                  AND check_out IS NULL
+                  AND (missing_checkout = 0 OR missing_checkout IS NULL)
+                  AND work_date < ?
+                ORDER BY work_date DESC
+                LIMIT 1
+            ");
+            $priorOpenStmt->execute([$user['id'], $today]);
+            $priorOpenLog = $priorOpenStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($priorOpenLog) {
+                $priorShift     = attGetShiftAtDate($pdo, (int)$user['id'], $priorOpenLog['work_date']);
+                $resetThreshold = attGetResetThreshold($priorShift, $priorOpenLog['work_date']);
+                if (time() <= $resetThreshold) {
+                    $blockDate = date('d/m/Y', strtotime($priorOpenLog['work_date']));
+                    $shiftName = $priorShift ? htmlspecialchars($priorShift['shift_name']) : 'ca trước';
+                    setFlash('danger', "⚠️ Bạn chưa chấm công ra <strong>{$shiftName}</strong> ngày <strong>{$blockDate}</strong>. Vui lòng chấm công ra trước khi bắt đầu ca mới.");
+                    header('Location: /erp/mobile/index.php');
+                    exit();
+                } else {
+                    attMarkMissingCheckout($pdo, (int)$priorOpenLog['id']);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('mobile prior open log check failed: ' . $e->getMessage());
+        }
+
         $isLate = 0;
         $lateMinutes = 0;
         try {
@@ -348,6 +435,18 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$user['id'], $today, $today]);
 $todayLog = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+// Nếu log hiện tại là từ ngày trước (open) và đã qua mốc reset – tự động đánh dấu quên checkout
+if ($todayLog && $todayLog['work_date'] < $today && $todayLog['check_in'] && !$todayLog['check_out']
+    && !(int)($todayLog['missing_checkout'] ?? 0)) {
+    $priorShiftDisp = attGetShiftAtDate($pdo, (int)$user['id'], $todayLog['work_date']);
+    if (time() > attGetResetThreshold($priorShiftDisp, $todayLog['work_date'])) {
+        attMarkMissingCheckout($pdo, (int)$todayLog['id']);
+        $stmtToday = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? AND work_date = ?");
+        $stmtToday->execute([$user['id'], $today]);
+        $todayLog = $stmtToday->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
 
 $shiftStmt = $pdo->prepare("
     SELECT ws.shift_name, ws.start_time, ws.end_time, ws.color, ws.is_night_shift
