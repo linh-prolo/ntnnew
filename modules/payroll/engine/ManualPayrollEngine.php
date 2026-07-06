@@ -31,9 +31,9 @@ class ManualPayrollEngine
         $this->pdo = $pdo;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
     // Kiểm tra xem nhân viên có dữ liệu manual_attendance cho kỳ này không
-    // ─────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
     public static function hasManualData(PDO $pdo, int $userId, int $periodYear, int $periodMonth): bool
     {
         try {
@@ -49,12 +49,12 @@ class ManualPayrollEngine
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
     // Phương thức tính lương chính
-    // ─────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
     public function calculate(int $periodId, int $userId): array
     {
-        // ── Bước 1: Lấy dữ liệu ─────────────────────────────────────
+        // ── Bước 1: Lấy dữ liệu ──────────────────────────────────────────
         $period  = $this->getPeriod($periodId);
         $profile = $this->getProfile($userId);
         $salary  = $this->getSalaryComponents($userId);
@@ -77,39 +77,43 @@ class ManualPayrollEngine
             );
         }
 
-        // ── Bước 2: Lấy các khoản lương cơ bản ─────────────────────
-        $basicSalary         = (int)($salary['basic']                   ?? 0);
-        $mealAllow           = (int)($salary['meal']                    ?? 0);
-        $clothesAllow        = (int)($salary['clothes']                 ?? 0);
-        $phoneAllow          = (int)($salary['phone']                   ?? 0);
-        $transportAllow      = (int)($salary['transport']               ?? 0);
-        $housingAllow        = (int)($salary['housing']                 ?? 0);
-        $performBonus        = (int)($salary['performance']             ?? 0);
-        $attendBonus         = (int)($salary['attendance_bonus']        ?? 0);
+        // ── Bước 2: Lấy các khoản lương cơ bản ──────────────────────────
+        $basicSalary         = (int)($salary['basic']                    ?? 0);
+        $mealAllow           = (int)($salary['meal']                     ?? 0);
+        $clothesAllow        = (int)($salary['clothes']                  ?? 0);
+        $phoneAllow          = (int)($salary['phone']                    ?? 0);
+        $transportAllow      = (int)($salary['transport']                ?? 0);
+        $housingAllow        = (int)($salary['housing']                  ?? 0);
+        $performBonus        = (int)($salary['performance']              ?? 0);
         $responsibilityAllow = (int)($salary['responsibility_allowance'] ?? 0);
-        $seniorityAllow      = (int)($salary['seniority_allowance']     ?? 0);
+        $seniorityAllow      = (int)($salary['seniority_allowance']      ?? 0);
+
+        // ── FIX: Lấy attendance_bonus từ employee_salaries trực tiếp ─────
+        // Không dùng $salary['attendance_bonus'] vì có thể bị miss nếu
+        // component_code không khớp. Query trực tiếp để chắc chắn.
+        $attendBonus = $this->getAttendanceBonus($userId);
 
         $workingDays = (int)$period['working_days'];
 
-        // ── Bước 3: Tính lương theo giờ ──────────────────────────────
+        // ── Bước 3: Tính lương theo giờ ──────────────────────────────────
         // Lương/giờ tính OT = (basic + PC trách nhiệm + PC thâm niên) / working_days / 8
         $otBase        = $basicSalary + $responsibilityAllow + $seniorityAllow;
         $basicPerDay   = $workingDays > 0 ? (int)round($otBase / $workingDays) : 0;
         $salaryPerHour = (int)round($basicPerDay / self::WORK_HOURS_PER_DAY);
 
         // Ngày công & các loại ngày nghỉ từ manual_attendance
-        $actualWorkdays     = (float)($manual['actual_work_days']    ?? 0);
-        $paidLeaveDays      = (float)($manual['paid_leave_days']     ?? 0);
-        $unpaidLeaveDays    = (float)($manual['unpaid_leave_days']   ?? 0);
-        $holidayDays        = (float)($manual['holiday_days']        ?? 0);
+        $actualWorkdays     = (float)($manual['actual_work_days']     ?? 0);
+        $paidLeaveDays      = (float)($manual['paid_leave_days']      ?? 0);
+        $unpaidLeaveDays    = (float)($manual['unpaid_leave_days']    ?? 0);
+        $holidayDays        = (float)($manual['holiday_days']         ?? 0);
         $insuranceLeaveDays = (float)($manual['insurance_leave_days'] ?? 0);
-        $personalLeaveDays  = (float)($manual['personal_leave_days'] ?? 0);
+        $personalLeaveDays  = (float)($manual['personal_leave_days']  ?? 0);
 
         // Tổng ngày hưởng lương
         $totalPaidDays = $actualWorkdays + $paidLeaveDays + $holidayDays
                        + $insuranceLeaveDays + $personalLeaveDays;
 
-        // ── Bước 4: Tính lương cơ bản thực nhận ─────────────────────
+        // ── Bước 4: Tính lương cơ bản thực nhận ──────────────────────────
         $totalSalaryNoAttend = 0;
         foreach ($salary['all_components'] as $comp) {
             if ($comp['component_code'] === 'attendance_bonus') continue;
@@ -122,7 +126,7 @@ class ManualPayrollEngine
             ? (int)round($basicSalary * ($totalPaidDays / $workingDays))
             : 0;
 
-        // ── Bước 5: Tính OT từ các cột hours_xxx ────────────────────
+        // ── Bước 5: Tính OT từ các cột hours_xxx ─────────────────────────
         $hours_100 = (float)($manual['hours_100'] ?? 0);
         $hours_130 = (float)($manual['hours_130'] ?? 0);
         $hours_150 = (float)($manual['hours_150'] ?? 0);
@@ -148,7 +152,7 @@ class ManualPayrollEngine
         $totalOtAmt = $otWeekdayAmt + $otHolidayAmt + $otWeekendAmt
                     + $otNightWeekdayAmt + $otNightWeekendAmt + $otNightHolidayAmt;
 
-        // ── Bước 6: Trợ cấp (theo tỷ lệ ngày) ───────────────────────
+        // ── Bước 6: Trợ cấp (theo tỷ lệ ngày) ───────────────────────────
         $allowanceRatio = $workingDays > 0
             ? min(1.0, $totalPaidDays / $workingDays)
             : 0.0;
@@ -162,7 +166,7 @@ class ManualPayrollEngine
         $otMealDays   = (int)floor($totalOtHours / self::OT_MEAL_MIN_HOURS);
         $otMealBonus  = $otMealDays * self::OT_MEAL_ALLOWANCE;
 
-        $mealReceived           = (int)round($mealAllow * $mealRatio) + $otMealBonus;
+        $mealReceived           = (int)round($mealAllow        * $mealRatio)       + $otMealBonus;
         $clothesReceived        = (int)round($clothesAllow        * $allowanceRatio);
         $phoneReceived          = (int)round($phoneAllow          * $allowanceRatio);
         $transportReceived      = (int)round($transportAllow      * $allowanceRatio);
@@ -171,9 +175,11 @@ class ManualPayrollEngine
         $seniorityReceived      = (int)round($seniorityAllow      * $allowanceRatio);
         $performReceived        = (int)round($performBonus        * $allowanceRatio);
 
-        // Chuyên cần: chỉ được nếu đủ ngày và không có nghỉ không phép
-        $attendEligible = ($allowanceRatio >= 1.0 && $unpaidLeaveDays === 0.0);
-        $attendReceived = $attendEligible ? $attendBonus : 0;
+        // ── FIX: Điều kiện chuyên cần ─────────────────────────────────────
+        // Đủ điều kiện khi: tỷ lệ ngày >= 100% VÀ không có nghỉ không phép
+        // Dùng so sánh float mềm (< 0.01) thay vì === 0.0 để tránh lỗi float precision
+        $attendEligible = ($allowanceRatio >= 1.0 && $unpaidLeaveDays < 0.01);
+        $attendReceived = ($attendEligible && $attendBonus > 0) ? $attendBonus : 0;
 
         // Other components
         $otherComponentsReceived = 0;
@@ -188,7 +194,7 @@ class ManualPayrollEngine
             $otherComponentsReceived += (int)round((int)$comp['amount'] * $allowanceRatio);
         }
 
-        // ── Bước 7: BHXH + Thuế ─────────────────────────────────────
+        // ── Bước 7: BHXH + Thuế ──────────────────────────────────────────
         $hasInsurance = (int)($profile['has_social_insurance'] ?? 0);
         $siEmployee   = $hasInsurance ? (int)round($basicSalary * self::SI_EMPLOYEE_RATE) : 0;
         $siCompany    = $hasInsurance ? (int)round($basicSalary * self::SI_COMPANY_RATE)  : 0;
@@ -218,7 +224,7 @@ class ManualPayrollEngine
         $grossSalary = $grossForTax;
         $netSalary   = max(0, $grossSalary - $siEmployee - $pitAmount);
 
-        // ── Bước 8: Ghi chú tự động ──────────────────────────────────
+        // ── Bước 8: Ghi chú tự động ──────────────────────────────────────
         $remarkParts = ['[Tính tay]'];
         if ($nightShiftBonus > 0) {
             $remarkParts[] = "Phụ trội đêm: +" . number_format($nightShiftBonus) . " đ (30% × " . number_format($hours_130, 1) . "h)";
@@ -232,11 +238,16 @@ class ManualPayrollEngine
         if ($seniorityReceived > 0) {
             $remarkParts[] = "PC Thâm niên: +" . number_format($seniorityReceived) . " đ";
         }
+        if ($attendEligible && $attendBonus > 0) {
+            $remarkParts[] = "Chuyên cần: +" . number_format($attendBonus) . " đ";
+        } elseif ($attendBonus > 0 && !$attendEligible) {
+            $remarkParts[] = "Không có chuyên cần: nghỉ không phép " . number_format($unpaidLeaveDays, 1) . " ngày";
+        }
         if ($hasInsurance) {
             $remarkParts[] = "BHXH NV: -" . number_format($siEmployee) . " đ (10.5% × lương CB)";
         }
 
-        // ── Bước 9: Return array ─────────────────────────────────────
+        // ── Bước 9: Return array ─────────────────────────────────────────
         return [
             'period_id'                         => $periodId,
             'user_id'                           => $userId,
@@ -322,9 +333,54 @@ class ManualPayrollEngine
         ];
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
     // Private helpers (độc lập với PayrollEngine)
-    // ─────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Lấy giá trị thưởng chuyên cần trực tiếp từ DB.
+     * Query rõ ràng theo component_code = 'attendance_bonus' để tránh
+     * trường hợp getSalaryComponents() không map được do custom_name.
+     */
+    private function getAttendanceBonus(int $userId): int
+    {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT es.amount
+                FROM employee_salaries es
+                JOIN salary_components sc ON es.component_id = sc.id
+                WHERE es.user_id = ?
+                  AND es.is_active = 1
+                  AND sc.component_code = 'attendance_bonus'
+                  AND es.approval_status = 'approved'
+                ORDER BY es.id DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$userId]);
+            $val = $stmt->fetchColumn();
+
+            // Nếu không có approved, thử pending
+            if ($val === false) {
+                $stmt2 = $this->pdo->prepare("
+                    SELECT es.amount
+                    FROM employee_salaries es
+                    JOIN salary_components sc ON es.component_id = sc.id
+                    WHERE es.user_id = ?
+                      AND es.is_active = 1
+                      AND sc.component_code = 'attendance_bonus'
+                    ORDER BY es.id DESC
+                    LIMIT 1
+                ");
+                $stmt2->execute([$userId]);
+                $val = $stmt2->fetchColumn();
+            }
+
+            return $val !== false ? (int)$val : 0;
+        } catch (\Throwable $e) {
+            error_log("ManualPayrollEngine::getAttendanceBonus error uid=$userId: " . $e->getMessage());
+            return 0;
+        }
+    }
 
     private function getPeriod(int $id): array
     {
@@ -339,9 +395,9 @@ class ManualPayrollEngine
         $stmt->execute([$userId]);
         $profile = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$profile) return [];
-        if (!isset($profile['annual_leave_total']))  $profile['annual_leave_total']  = 12;
-        if (!isset($profile['dependants']))           $profile['dependants']          = 0;
-        if (!isset($profile['has_social_insurance'])) $profile['has_social_insurance'] = 0;
+        if (!isset($profile['annual_leave_total']))   $profile['annual_leave_total']   = 12;
+        if (!isset($profile['dependants']))            $profile['dependants']           = 0;
+        if (!isset($profile['has_social_insurance']))  $profile['has_social_insurance'] = 0;
         return $profile;
     }
 
