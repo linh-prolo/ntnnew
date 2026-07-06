@@ -25,8 +25,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         } elseif ($action === 'delete') {
             // Chỉ Giám đốc mới được xoá
             if (hasRole('director')) {
-                $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$target_id]);
-                setFlash('success', 'Đã xoá tài khoản.');
+                try {
+                    $pdo->beginTransaction();
+
+                    // ── NULL hóa các cột created_by / updated_by / approved_by
+                    //    trong các bảng có FK → users(id) trước khi xoá user ──
+                    $nullifyQueries = [
+                        "UPDATE employee_salaries    SET created_by  = NULL WHERE created_by  = ?",
+                        "UPDATE employee_salaries    SET updated_by  = NULL WHERE updated_by  = ?",
+                        "UPDATE employee_salaries    SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE payroll_periods      SET created_by  = NULL WHERE created_by  = ?",
+                        "UPDATE payroll_periods      SET submitted_by= NULL WHERE submitted_by= ?",
+                        "UPDATE payroll_periods      SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE payroll_periods      SET locked_by   = NULL WHERE locked_by   = ?",
+                        "UPDATE payroll_slips        SET manually_adjusted = 0 WHERE user_id  = ?",
+                        "UPDATE leave_requests       SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE overtime_requests    SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE manual_attendance    SET imported_by = NULL WHERE imported_by = ?",
+                        "UPDATE attendance_logs      SET user_id     = NULL WHERE user_id     = ? AND 1=0", // skip — có FK cascade
+                    ];
+
+                    // Chỉ chạy các bảng tồn tại (bảng có thể chưa được tạo)
+                    $safeQueries = [
+                        "UPDATE employee_salaries SET created_by  = NULL WHERE created_by  = ?",
+                        "UPDATE employee_salaries SET updated_by  = NULL WHERE updated_by  = ?",
+                        "UPDATE employee_salaries SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE payroll_periods   SET created_by  = NULL WHERE created_by  = ?",
+                        "UPDATE payroll_periods   SET submitted_by= NULL WHERE submitted_by= ?",
+                        "UPDATE payroll_periods   SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE payroll_periods   SET locked_by   = NULL WHERE locked_by   = ?",
+                        "UPDATE leave_requests    SET approved_by = NULL WHERE approved_by = ?",
+                        "UPDATE overtime_requests SET approved_by = NULL WHERE approved_by = ?",
+                    ];
+
+                    // manual_attendance có thể chưa tồn tại — bọc try/catch riêng
+                    try {
+                        $pdo->prepare("UPDATE manual_attendance SET imported_by = NULL WHERE imported_by = ?")
+                            ->execute([$target_id]);
+                    } catch (\Throwable $e) { /* bảng chưa tạo → bỏ qua */ }
+
+                    foreach ($safeQueries as $q) {
+                        $pdo->prepare($q)->execute([$target_id]);
+                    }
+
+                    // Xoá user — các bảng có ON DELETE CASCADE sẽ tự xoá
+                    $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$target_id]);
+
+                    $pdo->commit();
+                    setFlash('success', '✅ Đã xoá tài khoản.');
+                } catch (\Throwable $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    setFlash('danger', '❌ Không thể xoá: ' . $e->getMessage());
+                }
             } else {
                 setFlash('danger', 'Bạn không có quyền xoá tài khoản.');
             }
@@ -189,11 +239,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </td>
                         <td class="text-center">
                             <div class="d-flex justify-content-center gap-1">
-				<!-- Nút Hồ sơ (thêm trước nút Sửa) -->
-				<a href="/erp/modules/users/profile.php?id=<?= $u['id'] ?>"
-  					class="btn btn-sm btn-outline-success" title="Hồ sơ nhân viên">
-  					  <i class="fas fa-id-card"></i>
-				</a>
+                                <!-- Nút Hồ sơ -->
+                                <a href="/erp/modules/users/profile.php?id=<?= $u['id'] ?>"
+                                   class="btn btn-sm btn-outline-success" title="Hồ sơ nhân viên">
+                                    <i class="fas fa-id-card"></i>
+                                </a>
                                 <!-- Sửa -->
                                 <a href="/erp/modules/users/edit.php?id=<?= $u['id'] ?>"
                                    class="btn btn-sm btn-outline-primary" title="Chỉnh sửa">
@@ -229,7 +279,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                                     <input type="hidden" name="action" value="delete">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Xoá tài khoản"
-                                            onclick="return confirm('⚠️ Xoá tài khoản <?= htmlspecialchars($u['full_name']) ?>?\nHành động này không thể hoàn tác!')">
+                                            onclick="return confirm('⚠️ Xoá tài khoản <?= htmlspecialchars($u['full_name']) ?>?\nToàn bộ dữ liệu liên quan sẽ bị xoá. Hành động này không thể hoàn tác!')">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
