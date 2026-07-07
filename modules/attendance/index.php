@@ -36,12 +36,23 @@ if (!function_exists('attGetShiftAtDate')) {
 }
 
 // ── Tính mốc thời gian reset cho log mở (Unix timestamp) ────────────────────
-// Ca đêm (is_night_shift=1): reset sau 11:59:59 ngày hôm sau
+// Ca đêm (is_night_shift=1): reset sau end_time của ca + 2 giờ buffer (ngày hôm sau)
+//                            Fallback: 08:00:00 ngày hôm sau nếu không có end_time
 // Ca ngày / hành chính:     reset sau 23:59:59 của work_date
 if (!function_exists('attGetResetThreshold')) {
     function attGetResetThreshold(?array $shift, string $workDate): int {
         if ((int)($shift['is_night_shift'] ?? 0) === 1) {
-            return (int)strtotime($workDate . ' +1 day 11:59:59');
+            $endTime = $shift['end_time'] ?? null;
+            if ($endTime) {
+                // end_time ca đêm thường là sáng hôm sau (vd: 01:00, 06:00)
+                // Mốc reset = ngày hôm sau + end_time + 2 giờ buffer
+                $baseTs = strtotime($workDate . ' +1 day ' . $endTime);
+                if ($baseTs !== false && $baseTs > 0) {
+                    return (int)($baseTs + 7200);
+                }
+            }
+            // Fallback: reset lúc 08:00 sáng ngày hôm sau
+            return (int)strtotime($workDate . ' +1 day 08:00:00');
         }
         return (int)strtotime($workDate . ' 23:59:59');
     }
