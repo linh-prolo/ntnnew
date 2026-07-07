@@ -30,7 +30,17 @@ if (!function_exists('attGetShiftAtDate')) {
                 ORDER BY es.effective_date DESC LIMIT 1
             ");
             $st->execute([$userId, $date, $date]);
-            return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            $shift = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            if (!$shift) {
+                try {
+                    $defStmt = $pdo->prepare("SELECT * FROM work_shifts WHERE shift_code = 'HANHCHINH' AND is_active = 1 LIMIT 1");
+                    $defStmt->execute();
+                    $shift = $defStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                } catch (Throwable $e) {
+                    $shift = null;
+                }
+            }
+            return $shift;
         } catch (Throwable $e) {
             return null;
         }
@@ -353,6 +363,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $shStmt->execute([$user['id'], $today, $today]);
             $shift = $shStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$shift) {
+                try {
+                    $defStmt = $pdo->prepare("SELECT * FROM work_shifts WHERE shift_code = 'HANHCHINH' AND is_active = 1 LIMIT 1");
+                    $defStmt->execute();
+                    $shift = $defStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                } catch (Throwable $e) {
+                    $shift = null;
+                }
+            }
 
             if ($shift) {
                 $shiftStart = strtotime($today . ' ' . $shift['start_time']);
