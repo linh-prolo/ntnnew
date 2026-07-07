@@ -52,6 +52,17 @@ $shStmt = $pdo->prepare("
 $shStmt->execute([$userId, $date, $date]);
 $shift = $shStmt->fetch(PDO::FETCH_ASSOC);
 
+// Fallback: nhân viên không được phân ca → dùng ca hành chính mặc định
+if (!$shift) {
+    try {
+        $defStmt = $pdo->prepare("SELECT * FROM work_shifts WHERE shift_code = 'HANHCHINH' AND is_active = 1 LIMIT 1");
+        $defStmt->execute();
+        $shift = $defStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        $shift = null;
+    }
+}
+
 // Tính lại is_late, late_minutes
 $isLate       = 0;
 $lateMinutes  = 0;
@@ -83,7 +94,8 @@ if ($checkIn && $shift) {
             $shiftEnd += 86400;
         }
 
-        if ($actualOut < $shiftEnd) {
+        $earlyLeaveThreshold = 60; // 60 giây — nhất quán với modules/attendance/index.php
+        if (($shiftEnd - $actualOut) >= $earlyLeaveThreshold) {
             $earlyLeave   = 1;
             $earlyMinutes = (int)(($shiftEnd - $actualOut) / 60);
         }
