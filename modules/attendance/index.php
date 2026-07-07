@@ -121,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             $chkLat    = $deptPolicy['latitude']      !== null ? (float)$deptPolicy['latitude']      : (float)($locSetting['latitude']      ?? 0);
             $chkLng    = $deptPolicy['longitude']     !== null ? (float)$deptPolicy['longitude']     : (float)($locSetting['longitude']     ?? 0);
             $chkRadius = $deptPolicy['radius_meters'] !== null ? (int)$deptPolicy['radius_meters']   : (int)($locSetting['radius_meters']   ?? 200);
-            $chkName   = $deptPolicy['policy_name']   !== '' ? $deptPolicy['policy_name'] : ($locSetting['location_name'] ?? 'Công ty');
+            $chkName   = ($deptPolicy['policy_name'] ?? '') !== '' ? $deptPolicy['policy_name'] : ($locSetting['location_name'] ?? 'Công ty');
 
             $R    = 6371000;
             $dLat = deg2rad($lat - $chkLat);
@@ -798,7 +798,7 @@ if ($jsDeptPolicy) {
         $chkLat    = $jsDeptPolicy['latitude']      !== null ? (float)$jsDeptPolicy['latitude']      : (float)($jsLocSetting['latitude']      ?? 0);
         $chkLng    = $jsDeptPolicy['longitude']     !== null ? (float)$jsDeptPolicy['longitude']     : (float)($jsLocSetting['longitude']     ?? 0);
         $chkRadius = $jsDeptPolicy['radius_meters'] !== null ? (int)$jsDeptPolicy['radius_meters']   : (int)($jsLocSetting['radius_meters']   ?? 200);
-        $chkName   = $jsDeptPolicy['policy_name']   !== '' ? $jsDeptPolicy['policy_name'] : ($jsLocSetting['location_name'] ?? 'Công ty');
+        $chkName   = ($jsDeptPolicy['policy_name'] ?? '') !== '' ? $jsDeptPolicy['policy_name'] : ($jsLocSetting['location_name'] ?? 'Công ty');
         $jsLocationConfig = ['enabled' => true, 'lat' => $chkLat, 'lng' => $chkLng, 'radius' => $chkRadius, 'name' => $chkName];
     }
 } elseif ($jsLocSetting) {

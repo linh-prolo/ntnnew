@@ -165,19 +165,31 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <!-- Phòng ban -->
                         <div class="mb-3">
                             <label class="form-label fw-semibold">🏢 Phòng ban</label>
-                            <select name="department_id" class="form-select" required <?= $editPolicy ? 'disabled' : '' ?>>
+                            <?php if ($editPolicy): ?>
+                            <?php
+                                $editDeptName = '';
+                                foreach ($departments as $d) {
+                                    if ((int)$d['id'] === (int)$editPolicy['department_id']) {
+                                        $editDeptName = $d['name'];
+                                        break;
+                                    }
+                                }
+                            ?>
+                            <div class="form-control bg-light text-muted" aria-readonly="true">
+                                <?= htmlspecialchars($editDeptName) ?>
+                            </div>
+                            <input type="hidden" name="department_id" value="<?= (int)$editPolicy['department_id'] ?>">
+                            <?php else: ?>
+                            <select name="department_id" class="form-select" required>
                                 <option value="">— Chọn phòng ban —</option>
                                 <?php foreach ($departments as $dept): ?>
                                 <option value="<?= $dept['id'] ?>"
-                                    <?= ($editPolicy && (int)$editPolicy['department_id'] === (int)$dept['id']) ? 'selected' : '' ?>
-                                    <?= (!$editPolicy && isset($policiesRaw[$dept['id']])) ? 'disabled' : '' ?>>
+                                    <?= isset($policiesRaw[$dept['id']]) ? 'disabled' : '' ?>>
                                     <?= htmlspecialchars($dept['name']) ?>
-                                    <?= (!$editPolicy && isset($policiesRaw[$dept['id']])) ? ' (đã có policy)' : '' ?>
+                                    <?= isset($policiesRaw[$dept['id']]) ? ' (đã có policy)' : '' ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
-                            <?php if ($editPolicy): ?>
-                            <input type="hidden" name="department_id" value="<?= (int)$editPolicy['department_id'] ?>">
                             <?php endif; ?>
                         </div>
 
@@ -396,9 +408,25 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const initLat = <?= (float)(($editPolicy ? $editPolicy['latitude'] : null) ?? ($globalSetting ? $globalSetting['latitude'] : 10.7769) ?? 10.7769) ?>;
-const initLng = <?= (float)(($editPolicy ? $editPolicy['longitude'] : null) ?? ($globalSetting ? $globalSetting['longitude'] : 106.7009) ?? 106.7009) ?>;
-const initR   = <?= (int)(($editPolicy ? $editPolicy['radius_meters'] : null) ?? ($globalSetting ? $globalSetting['radius_meters'] : 200) ?? 200) ?>;
+<?php
+// Tính toán tọa độ khởi tạo bản đồ: editPolicy → globalSetting → giá trị mặc định
+$mapInitLat = 10.7769;
+$mapInitLng = 106.7009;
+$mapInitR   = 200;
+if ($globalSetting) {
+    $mapInitLat = (float)($globalSetting['latitude']      ?? $mapInitLat);
+    $mapInitLng = (float)($globalSetting['longitude']     ?? $mapInitLng);
+    $mapInitR   = (int)($globalSetting['radius_meters']   ?? $mapInitR);
+}
+if ($editPolicy) {
+    if ($editPolicy['latitude']      !== null) $mapInitLat = (float)$editPolicy['latitude'];
+    if ($editPolicy['longitude']     !== null) $mapInitLng = (float)$editPolicy['longitude'];
+    if ($editPolicy['radius_meters'] !== null) $mapInitR   = (int)$editPolicy['radius_meters'];
+}
+?>
+const initLat = <?= $mapInitLat ?>;
+const initLng = <?= $mapInitLng ?>;
+const initR   = <?= $mapInitR ?>;
 
 const map = L.map('deptMap').setView([initLat, initLng], 15);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
