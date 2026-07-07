@@ -509,27 +509,35 @@ $today = date('Y-m-d');
 $currentMonth = (int)date('m');
 $currentYear = (int)date('Y');
 
-$stmt = $pdo->prepare("
-    SELECT * FROM attendance_logs
-    WHERE user_id = ?
-      AND work_date >= DATE_SUB(?, INTERVAL 1 DAY)
-      AND work_date <= ?
-    ORDER BY CASE WHEN check_in IS NOT NULL AND check_out IS NULL THEN 0 ELSE 1 END ASC,
-             work_date DESC
-    LIMIT 1
-");
-$stmt->execute([$user['id'], $today, $today]);
-$todayLog = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+// Bước 1: Ưu tiên lấy log của đúng ngày hôm nay
+$stmtToday = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? AND work_date = ? ORDER BY id DESC LIMIT 1");
+$stmtToday->execute([$user['id'], $today]);
+$todayLog = $stmtToday->fetch(PDO::FETCH_ASSOC) ?: null;
 
-// Nếu log hiện tại là từ ngày trước (open) và đã qua mốc reset – tự động đánh dấu quên checkout
-if ($todayLog && $todayLog['work_date'] < $today && $todayLog['check_in'] && !$todayLog['check_out']
-    && !(int)($todayLog['missing_checkout'] ?? 0)) {
-    $priorShiftDisp = attGetShiftAtDate($pdo, (int)$user['id'], $todayLog['work_date']);
-    if (time() > attGetResetThreshold($priorShiftDisp, $todayLog['work_date'])) {
-        attMarkMissingCheckout($pdo, (int)$todayLog['id']);
-        $stmtToday = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? AND work_date = ?");
-        $stmtToday->execute([$user['id'], $today]);
-        $todayLog = $stmtToday->fetch(PDO::FETCH_ASSOC) ?: null;
+// Bước 2: Hôm nay chưa có log → kiểm tra hôm qua có ca đêm đang mở không
+if (!$todayLog) {
+    $stmtYest = $pdo->prepare("
+        SELECT * FROM attendance_logs
+        WHERE user_id = ?
+          AND work_date = DATE_SUB(?, INTERVAL 1 DAY)
+          AND check_in IS NOT NULL
+          AND check_out IS NULL
+          AND (missing_checkout = 0 OR missing_checkout IS NULL)
+        ORDER BY id DESC LIMIT 1
+    ");
+    $stmtYest->execute([$user['id'], $today]);
+    $yestLog = $stmtYest->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if ($yestLog) {
+        $yestShift = attGetShiftAtDate($pdo, (int)$user['id'], $yestLog['work_date']);
+        if (time() <= attGetResetThreshold($yestShift, $yestLog['work_date'])) {
+            // Vẫn trong cửa sổ ca đêm → cho phép check_out
+            $todayLog = $yestLog;
+        } else {
+            // Đã qua mốc reset → đánh dấu quên chấm ra, hôm nay coi như chưa chấm
+            attMarkMissingCheckout($pdo, (int)$yestLog['id']);
+            $todayLog = null;
+        }
     }
 }
 
