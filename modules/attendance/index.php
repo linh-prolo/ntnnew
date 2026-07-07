@@ -438,7 +438,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     } elseif ($action === 'check_out') {
         // Tìm bản ghi check_in chưa có check_out trong hôm nay hoặc hôm qua (cho ca đêm qua ngày)
         $openLog = $pdo->prepare("
-            SELECT id FROM attendance_logs
+            SELECT id, check_in, work_date FROM attendance_logs
             WHERE user_id = ?
               AND check_in IS NOT NULL
               AND check_out IS NULL
@@ -448,20 +448,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             LIMIT 1
         ");
         $openLog->execute([$user['id'], $today, $today]);
-        $openLogId = $openLog->fetchColumn();
+        $openLogRow = $openLog->fetch(PDO::FETCH_ASSOC);
+        $openLogId = $openLogRow['id'] ?? null;
 
         if ($openLogId) {
+            $earlyLeave = 0;
+            $earlyMinutes = 0;
+            try {
+                $logWorkDate = $openLogRow['work_date'];
+                $shiftEarly = attGetShiftAtDate($pdo, (int)$user['id'], $logWorkDate);
+                if ($shiftEarly && !empty($shiftEarly['start_time']) && !empty($shiftEarly['end_time'])) {
+                    $secondsPerDay = 86400;
+                    $earlyLeaveThresholdSeconds = 60;
+                    $actualOut = strtotime($now);
+                    $shiftEnd   = strtotime($logWorkDate . ' ' . $shiftEarly['end_time']);
+                    $isOvernightShift = $shiftEarly['end_time'] < $shiftEarly['start_time'];
+
+                    if ($isOvernightShift) {
+                        $shiftEnd += $secondsPerDay;
+                    }
+                    $earlyDiffSeconds = $shiftEnd - $actualOut;
+                    if ($earlyDiffSeconds >= $earlyLeaveThresholdSeconds) {
+                        $earlyMinutes = (int)($earlyDiffSeconds / 60);
+                        $earlyLeave   = 1;
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('check_out early_leave calc failed: ' . $e->getMessage());
+            }
+
             try {
                 $pdo->prepare("UPDATE attendance_logs
                     SET check_out = ?,
                         work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2),
+                        early_leave = ?,
+                        early_leave_minutes = ?,
                         check_out_ip = ?, check_out_lat = ?, check_out_lng = ?, check_out_location_flag = ?, check_out_photo = ?
                     WHERE id = ? AND check_out IS NULL")
-                    ->execute([$now, $now, $ip, $lat, $lng, $locationFlag, $photoPath, $openLogId]);
+                    ->execute([$now, $now, $earlyLeave, $earlyMinutes, $ip, $lat, $lng, $locationFlag, $photoPath, $openLogId]);
             } catch (Throwable $e) {
                 error_log('check_out with location failed: ' . $e->getMessage());
-                $pdo->prepare("UPDATE attendance_logs SET check_out = ?, work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2) WHERE id = ? AND check_out IS NULL")
-                    ->execute([$now, $now, $openLogId]);
+                $pdo->prepare("UPDATE attendance_logs SET check_out = ?, work_hours = ROUND(TIMESTAMPDIFF(MINUTE, check_in, ?) / 60, 2), early_leave = ?, early_leave_minutes = ? WHERE id = ? AND check_out IS NULL")
+                    ->execute([$now, $now, $earlyLeave, $earlyMinutes, $openLogId]);
             }
         }
         setFlash('success', 'Chấm công ra ca thành công lúc ' . date('H:i') . $flagMsg);
