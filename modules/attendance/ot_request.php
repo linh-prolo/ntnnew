@@ -93,13 +93,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $hChk->execute([$ot_date]);
         if ($hChk->fetchColumn() > 0) $isHoliday = true;
 
+        // PHP date('N'): 1=Thứ 2 ... 6=Thứ 7 ... 7=Chủ nhật
+        // Thứ 7 (6) = ngày thường; Chủ nhật (7) = cuối tuần
         if ($isNightOT) {
             if ($isHoliday)    $ot_type = 'night_holiday';
-            elseif ($dow >= 6) $ot_type = 'night_weekend';
+            elseif ($dow == 7) $ot_type = 'night_weekend';
             else               $ot_type = 'night_weekday';
         } elseif ($isHoliday) {
             $ot_type = 'holiday';
-        } elseif ($dow >= 6) {
+        } elseif ($dow == 7) {
             $ot_type = 'weekend';
         } else {
             $ot_type = 'weekday';
@@ -497,7 +499,7 @@ function getOTType(dateStr, startTimeStr) {
     const isNight   = isNightOT(startTimeStr);
     const isHol     = holidays.includes(dateStr);
     const dow       = new Date(dateStr).getDay(); // 0=Sun, 6=Sat
-    const isWeekend = (dow === 0 || dow === 6);
+    const isWeekend = (dow === 0); // Chỉ Chủ nhật mới là cuối tuần; Thứ 7 (6) = ngày thường
 
     if (isNight) {
         if (isHol)     return 'night_holiday';

@@ -87,7 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         exit();
     }
 
-    // ── Kiểm tra cài đặt vị trí công ty ──────────────────────────────
+    // ── Kiểm tra cài đặt vị trí: ưu tiên policy phòng ban, fallback về global ──
+    // 1) Lấy global setting
     try {
         $locStmt = $pdo->query("SELECT * FROM attendance_location_settings LIMIT 1");
         $locSetting = $locStmt ? $locStmt->fetch(PDO::FETCH_ASSOC) : null;
@@ -95,7 +96,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $locSetting = null;
     }
 
-    if ($locSetting && (int)$locSetting['is_enabled'] === 1) {
+    // 2) Lấy policy phòng ban nếu user có department_id
+    $deptPolicy = null;
+    $userDeptId = (int)($user['department_id'] ?? 0);
+    if ($userDeptId > 0) {
+        try {
+            $dpStmt = $pdo->prepare("
+                SELECT * FROM attendance_department_policies
+                WHERE department_id = ? AND is_active = 1
+                LIMIT 1
+            ");
+            $dpStmt->execute([$userDeptId]);
+            $deptPolicy = $dpStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            $deptPolicy = null; // Bảng chưa tồn tại → fallback global
+        }
+    }
+
+    // 3) Áp dụng policy: department policy > global setting
+    if ($deptPolicy) {
+        // Flexible = cho phép ngoài phạm vi, chỉ ghi nhận
+        if ($deptPolicy['location_mode'] === 'strict') {
+            // Strict: bắt buộc trong bán kính. Lấy tọa độ từ policy hoặc global.
+            $chkLat    = $deptPolicy['latitude']      !== null ? (float)$deptPolicy['latitude']      : (float)($locSetting['latitude']      ?? 0);
+            $chkLng    = $deptPolicy['longitude']     !== null ? (float)$deptPolicy['longitude']     : (float)($locSetting['longitude']     ?? 0);
+            $chkRadius = $deptPolicy['radius_meters'] !== null ? (int)$deptPolicy['radius_meters']   : (int)($locSetting['radius_meters']   ?? 200);
+            $chkName   = $deptPolicy['policy_name']   !== '' ? $deptPolicy['policy_name'] : ($locSetting['location_name'] ?? 'Công ty');
+
+            $R    = 6371000;
+            $dLat = deg2rad($lat - $chkLat);
+            $dLng = deg2rad($lng - $chkLng);
+            $a    = sin($dLat/2)*sin($dLat/2) + cos(deg2rad($chkLat))*cos(deg2rad($lat))*sin($dLng/2)*sin($dLng/2);
+            $dist = $R * 2 * atan2(sqrt($a), sqrt(1-$a));
+
+            if ($dist > $chkRadius) {
+                $distRound = round($dist);
+                setFlash('danger', "❌ Phòng ban của bạn yêu cầu chấm công tại <strong>" . htmlspecialchars($chkName) . "</strong>. Khoảng cách hiện tại: <strong>{$distRound}m</strong> (cho phép trong {$chkRadius}m).");
+                header('Location: /erp/modules/attendance/index.php');
+                exit();
+            }
+        }
+        // flexible: không chặn, chỉ ghi nhận location_flag
+    } elseif ($locSetting && (int)$locSetting['is_enabled'] === 1) {
+        // Fallback: áp dụng global setting như cũ
         $R    = 6371000;
         $lat1 = deg2rad((float)$locSetting['latitude']);
         $lat2 = deg2rad($lat);
@@ -724,22 +767,54 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 </style>
 
 <?php
-// Lấy location setting cho JS client-side preview
+// Lấy location setting cho JS client-side preview, ưu tiên policy phòng ban
 try {
     $jsLocStmt = $pdo->query("SELECT * FROM attendance_location_settings LIMIT 1");
     $jsLocSetting = $jsLocStmt ? $jsLocStmt->fetch(PDO::FETCH_ASSOC) : null;
 } catch (Throwable $e) {
     $jsLocSetting = null;
 }
+
+// Kiểm tra department policy cho user hiện tại
+$jsDeptPolicy = null;
+$jsUserDeptId = (int)($user['department_id'] ?? 0);
+if ($jsUserDeptId > 0) {
+    try {
+        $jsDpStmt = $pdo->prepare("SELECT * FROM attendance_department_policies WHERE department_id = ? AND is_active = 1 LIMIT 1");
+        $jsDpStmt->execute([$jsUserDeptId]);
+        $jsDeptPolicy = $jsDpStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        $jsDeptPolicy = null;
+    }
+}
+
+// Xây dựng locationConfig cho JS
+if ($jsDeptPolicy) {
+    if ($jsDeptPolicy['location_mode'] === 'flexible') {
+        // Flexible: không giới hạn vị trí (thu thập GPS để ghi nhận)
+        $jsLocationConfig = ['enabled' => false];
+    } else {
+        // Strict: dùng tọa độ policy hoặc fallback global
+        $chkLat    = $jsDeptPolicy['latitude']      !== null ? (float)$jsDeptPolicy['latitude']      : (float)($jsLocSetting['latitude']      ?? 0);
+        $chkLng    = $jsDeptPolicy['longitude']     !== null ? (float)$jsDeptPolicy['longitude']     : (float)($jsLocSetting['longitude']     ?? 0);
+        $chkRadius = $jsDeptPolicy['radius_meters'] !== null ? (int)$jsDeptPolicy['radius_meters']   : (int)($jsLocSetting['radius_meters']   ?? 200);
+        $chkName   = $jsDeptPolicy['policy_name']   !== '' ? $jsDeptPolicy['policy_name'] : ($jsLocSetting['location_name'] ?? 'Công ty');
+        $jsLocationConfig = ['enabled' => true, 'lat' => $chkLat, 'lng' => $chkLng, 'radius' => $chkRadius, 'name' => $chkName];
+    }
+} elseif ($jsLocSetting) {
+    $jsLocationConfig = [
+        'enabled' => (bool)(int)$jsLocSetting['is_enabled'],
+        'lat'     => (float)$jsLocSetting['latitude'],
+        'lng'     => (float)$jsLocSetting['longitude'],
+        'radius'  => (int)$jsLocSetting['radius_meters'],
+        'name'    => $jsLocSetting['location_name'],
+    ];
+} else {
+    $jsLocationConfig = ['enabled' => false];
+}
 ?>
 <script>
-const locationConfig = <?= json_encode($jsLocSetting ? [
-    'enabled' => (bool)(int)$jsLocSetting['is_enabled'],
-    'lat'     => (float)$jsLocSetting['latitude'],
-    'lng'     => (float)$jsLocSetting['longitude'],
-    'radius'  => (int)$jsLocSetting['radius_meters'],
-    'name'    => $jsLocSetting['location_name'],
-] : ['enabled' => false]) ?>;
+const locationConfig = <?= json_encode($jsLocationConfig) ?>;
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
     const R = 6371000;

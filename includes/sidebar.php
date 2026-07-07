@@ -17,7 +17,7 @@ $activeGroup = '';
 if (isGroupActive(['/modules/users/profile', '/modules/users/change_password'])) $activeGroup = 'personal';
 elseif (isGroupActive(['/attendance/', '/leave_request', '/ot_request', '/all_attendance',
                         '/leave_manage', '/ot_manage', '/shift_schedule', '/shift_assign', '/shift_setup',
-                        '/location_settings', '/manual_attendance',
+                        '/location_settings', '/department_location_policy', '/manual_attendance',
                         '/payroll/holidays'])) $activeGroup = 'attendance';
 elseif (isGroupActive(['/payroll/'])) $activeGroup = 'payroll';
 elseif (isGroupActive(['/master/'])) $activeGroup = 'master';
@@ -96,6 +96,8 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
           <i class="fas fa-sliders-h"></i><span>Setup ca làm việc</span></a></li>
         <li><a class="nav-link <?= isActive('/location_settings') ?>" href="/erp/modules/attendance/location_settings.php">
           <i class="fas fa-map-marker-alt"></i><span>Cài đặt vị trí CC</span></a></li>
+        <li><a class="nav-link <?= isActive('/department_location_policy') ?>" href="/erp/modules/attendance/department_location_policy.php">
+          <i class="fas fa-building"></i><span>Vị trí CC theo PB</span></a></li>
         <li><a class="nav-link <?= isActive('/payroll/holidays') ?>" href="/erp/modules/payroll/holidays.php">
           <i class="fas fa-calendar-times"></i><span>Ngày lễ</span></a></li>
         <?php endif; ?>
