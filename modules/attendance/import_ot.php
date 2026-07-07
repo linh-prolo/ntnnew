@@ -152,9 +152,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                     }
 
                     // Xác định loại OT
+                    // PHP date('N'): 1=Thứ 2 ... 6=Thứ 7 ... 7=Chủ nhật
+                    // Thứ 7 (6) = ngày thường; Chủ nhật (7) = cuối tuần
                     $dow = (int)date('N', strtotime($workDate)); // 1=Mon..7=Sun
                     if (isset($holidaySet[$workDate]))  $otType = 'holiday';
-                    elseif ($dow >= 6)                  $otType = 'weekend';
+                    elseif ($dow == 7)                  $otType = 'weekend';
                     else                                $otType = 'weekday';
 
                     // Lấy ca làm việc
