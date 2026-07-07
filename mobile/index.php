@@ -48,9 +48,9 @@ if (!function_exists('attGetResetThreshold')) {
             if ($endTime) {
                 // end_time ca đêm thường là sáng hôm sau (vd: 01:00, 06:00)
                 // Mốc reset = ngày hôm sau + end_time + 2 giờ buffer
-                $resetTs = strtotime($workDate . ' +1 day ' . $endTime) + 7200;
-                if ($resetTs !== false && $resetTs > 0) {
-                    return (int)$resetTs;
+                $baseTs = strtotime($workDate . ' +1 day ' . $endTime);
+                if ($baseTs !== false && $baseTs > 0) {
+                    return (int)($baseTs + 7200);
                 }
             }
             // Fallback: reset lúc 08:00 sáng ngày hôm sau
