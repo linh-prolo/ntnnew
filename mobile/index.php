@@ -454,7 +454,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             LIMIT 1
         ");
         $openLog->execute([$user['id'], $today, $today]);
-        $openLogRow = $openLog->fetch(PDO::FETCH_ASSOC) ?: null;
+        $openLogRow = $openLog->fetch(PDO::FETCH_ASSOC);
         $openLogId = $openLogRow['id'] ?? null;
 
         if ($openLogId) {
@@ -464,20 +464,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $logWorkDate = $openLogRow['work_date'];
                 $shiftEarly = attGetShiftAtDate($pdo, (int)$user['id'], $logWorkDate);
                 if ($shiftEarly && !empty($shiftEarly['start_time']) && !empty($shiftEarly['end_time'])) {
+                    $secondsPerDay = 86400;
+                    $earlyLeaveThresholdSeconds = 60;
                     $actualOut = strtotime($now);
-                    $actualIn  = strtotime($openLogRow['check_in']);
-                    $shiftStart = strtotime($logWorkDate . ' ' . $shiftEarly['start_time']);
                     $shiftEnd   = strtotime($logWorkDate . ' ' . $shiftEarly['end_time']);
+                    $isOvernightShift = $shiftEarly['end_time'] < $shiftEarly['start_time'];
 
-                    if ($shiftEnd <= $shiftStart) {
-                        $shiftEnd += 86400;
+                    if ($isOvernightShift) {
+                        $shiftEnd += $secondsPerDay;
                     }
-                    if ($actualOut <= $actualIn) {
-                        $actualOut += 86400;
-                    }
-                    if ($actualOut < $shiftEnd) {
+                    $earlyDiffSeconds = $shiftEnd - $actualOut;
+                    if ($earlyDiffSeconds >= $earlyLeaveThresholdSeconds) {
+                        $earlyMinutes = (int)($earlyDiffSeconds / 60);
                         $earlyLeave   = 1;
-                        $earlyMinutes = (int)(($shiftEnd - $actualOut) / 60);
                     }
                 }
             } catch (Throwable $e) {
